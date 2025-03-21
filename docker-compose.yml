@@ -2,7 +2,7 @@ services:
   perfsonar-testpoint:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile-perfsonar-testpoint
     container_name: perfsonar-testpoint
     network_mode: "host"
     image: kthare10/perfsonar-testpoint:systemd
