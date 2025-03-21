@@ -1,8 +1,12 @@
 #!/bin/bash
 
-# Read environment variables
-HOSTS="${HOSTS}"
-INTERVAL="${INTERVAL:-0 */2 * * *}"
+echo "Exporting environment variables to /etc/environment"
+
+printenv | grep -E '^(HOSTS|INTERVAL|TZ)=' >> /etc/environment
+source /etc/environment
+
+echo "HOSTS: ${HOSTS}"
+echo "INTERVAL: ${INTERVAL:-0 */2 * * *}"
 
 if [ -z "$HOSTS" ]; then
   echo "No hosts provided! Exiting."
