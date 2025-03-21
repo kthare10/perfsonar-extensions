@@ -12,6 +12,7 @@ services:
     environment:
       - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
       - TZ=UTC
+      - INTERVAL=0 */2 * * * # Example: Run every 2 hours
     tmpfs:
       - /run
       - /run/lock
@@ -33,6 +34,7 @@ services:
     environment:
       - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
       - TZ=UTC
+      - INTERVAL=0 */2 * * * # Example: Run every 2 hours
     volumes:
       - ./data:/data  # Results & logs outside
     restart: always

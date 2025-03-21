@@ -3,8 +3,7 @@ FROM perfsonar/testpoint:systemd
 LABEL maintainer="komal.thareja@gmail.com"
 
 # Copy scripts
-COPY pscheduler_test_runner.py /usr/src/app/
-COPY run_direct_tools.py /usr/src/app/
+COPY pscheduler_test_runner.py /usr/src/app/periodic.py
 COPY entrypoint.sh /usr/src/app/
 RUN chmod +x /usr/src/app/entrypoint.sh
 
