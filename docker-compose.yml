@@ -1,0 +1,38 @@
+services:
+  perfsonar-testpoint:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: perfsonar-testpoint
+    network_mode: "host"
+    image: kthare10/perfsonar-testpoint:systemd
+    cgroup: host
+    tty: true
+    stdin_open: true
+    environment:
+      - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
+      - TZ=UTC
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - ./data:/data  # Results & logs outside
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./compose/psconfig:/etc/perfsonar/psconfig
+    restart: always
+
+  perfsonar-tool:
+    build:
+      context: .
+      dockerfile: Dockerfile-perfsonar-tool
+    container_name: perfsonar-tool
+    image: kthare10/perfsonar-tool
+    tty: true
+    stdin_open: true
+    environment:
+      - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
+      - TZ=UTC
+    volumes:
+      - ./data:/data  # Results & logs outside
+    restart: always

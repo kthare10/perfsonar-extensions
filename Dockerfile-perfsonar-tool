@@ -1,0 +1,28 @@
+FROM rockylinux:9
+
+LABEL maintainer="komal.thareja@gmail.com"
+
+# Install EPEL and perfSONAR tools
+RUN dnf -y install epel-release && dnf clean all
+RUN curl -s https://downloads.perfsonar.net/install | sh -s - tools
+
+# Install Python 3.11, pip, cronie
+RUN dnf -y install python3.11 python3.11-pip cronie && \
+    alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
+    alternatives --install /usr/bin/pip pip /usr/bin/pip3.11 1 && \
+    procps && \
+    dnf clean all
+
+# Create app directory
+RUN mkdir -p /usr/src/app
+WORKDIR /usr/src/app
+
+# Copy scripts
+COPY pscheduler_test_runner.py /usr/src/app/
+COPY run_direct_tools.py /usr/src/app/
+COPY entrypoint.sh /usr/src/app/
+RUN chmod +x /usr/src/app/entrypoint.sh
+
+# Set entrypoint
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
+
