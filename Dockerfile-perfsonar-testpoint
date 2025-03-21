@@ -2,6 +2,9 @@ FROM perfsonar/testpoint:systemd
 
 LABEL maintainer="komal.thareja@gmail.com"
 
+RUN sudo apt update
+RUN sudo apt install -y cron
+
 # Copy scripts
 COPY pscheduler_test_runner.py /usr/src/app/periodic.py
 COPY entrypoint.sh /usr/src/app/
