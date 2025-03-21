@@ -42,5 +42,4 @@ else
   crond -n
 fi
 
-# Execute the original CMD (supervisord)
-/usr/bin/supervisord -c /etc/supervisord.conf
+/lib/systemd/systemd
