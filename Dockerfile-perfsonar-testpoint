@@ -2,14 +2,16 @@ FROM perfsonar/testpoint:systemd
 
 LABEL maintainer="komal.thareja@gmail.com"
 
-RUN sudo apt update
-RUN sudo apt install -y cron
+RUN apt update && apt install -y cron
 
-# Copy scripts
+# Copy your Python script and entrypoint script
 COPY pscheduler_test_runner.py /usr/src/app/periodic.py
-COPY entrypoint.sh /usr/src/app/
-RUN chmod +x /usr/src/app/entrypoint.sh
+COPY custom-cron.sh /usr/src/app/
 
-# Set entrypoint
-ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
+RUN chmod +x /usr/src/app/custom-cron.sh
 
+# Copy systemd service file
+COPY custom-cron.service /etc/systemd/system/custom-cron.service
+
+# Enable the service
+RUN systemctl enable custom-cron.service
