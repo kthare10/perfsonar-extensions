@@ -18,7 +18,7 @@ services:
       - /run/lock
       - /tmp
     volumes:
-      - ./data:/data  # Results & logs outside
+      - ./data_testpoint:/data  # Results & logs outside
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - ./compose/psconfig:/etc/perfsonar/psconfig
     restart: always
@@ -36,5 +36,5 @@ services:
       - TZ=UTC
       - INTERVAL=0 */2 * * * # Example: Run every 2 hours
     volumes:
-      - ./data:/data  # Results & logs outside
+      - ./data_tools:/data  # Results & logs outside
     restart: always
