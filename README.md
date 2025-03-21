@@ -132,7 +132,8 @@ Logs and results are stored in the `./data` directory for both services.
 ├── docker-compose.yml              # Compose file defining both services
 ├── compose/
 │   └── psconfig/                   # Custom psconfig files for testpoint
-├── data/                           # Stores logs and test results
+├── data_testpoint/                 # Stores logs and test results for testpoint container
+├── data_tools/                     # Stores logs and test results for tool container
 └── README.md
 ```
 
