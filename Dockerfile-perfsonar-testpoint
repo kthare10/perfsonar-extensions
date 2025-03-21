@@ -13,5 +13,9 @@ RUN chmod +x /usr/src/app/custom-cron.sh
 # Copy systemd service file
 COPY custom-cron.service /etc/systemd/system/custom-cron.service
 
-# Enable the service
-RUN systemctl enable custom-cron.service
+
+COPY entrypoint-testpoint.sh /usr/src/app/
+RUN chmod +x /usr/src/app/entrypoint-testpoint.sh
+
+# Set entrypoint
+ENTRYPOINT ["/usr/src/app/entrypoint-testpoint.sh"]
