@@ -36,6 +36,7 @@ Builds upon the official [perfsonar-testpoint-docker](https://github.com/perfson
 **Launch:**
 ```bash
 docker-compose up -d perfsonar-testpoint
+docker exec -it perfsonar-testpoint /bin/bash /etc/cron.hourly/bootstrap_cron.sh
 ```
 
 ---
