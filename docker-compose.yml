@@ -12,7 +12,7 @@ services:
     environment:
       - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
       - TZ=UTC
-    - CRON_EXPRESSION=*/10 * * * *
+      - CRON_EXPRESSION=0 */2 * * *
     tmpfs:
       - /run
       - /run/lock

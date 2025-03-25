@@ -93,7 +93,7 @@ Add or remove hosts as needed.
 Edit `docker-compose.yml` and update:
 ```yaml
 environment:
-  - INTERVAL=0 */2 * * * # Example: Run every 2 hours
+  - CRON_EXPRESSION=0 */2 * * * # Example: Run every 2 hours
 ```
 Change interval as needed.
 
