@@ -12,12 +12,14 @@ services:
     environment:
       - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
       - TZ=UTC
-      - INTERVAL=0 */2 * * * # Example: Run every 2 hours
+    - CRON_EXPRESSION=*/10 * * * *
     tmpfs:
       - /run
       - /run/lock
       - /tmp
     volumes:
+      - ./pscheduler_test_runner.py:/usr/src/app/periodic.py
+      - ./compose/bootstrap_cron.sh:/etc/cron.hourly/bootstrap_cron.sh
       - ./data_testpoint:/data  # Results & logs outside
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - ./compose/psconfig:/etc/perfsonar/psconfig

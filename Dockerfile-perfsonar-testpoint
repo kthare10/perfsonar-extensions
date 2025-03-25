@@ -4,12 +4,3 @@ LABEL maintainer="komal.thareja@gmail.com"
 
 # Install cron
 RUN apt update && apt install -y cron
-
-# Copy your Python script and setup script
-COPY pscheduler_test_runner.py /usr/src/app/periodic.py
-COPY setup-cron.sh /usr/src/app/
-RUN chmod +x /usr/src/app/setup-cron.sh
-
-# Add systemd service to trigger setup script
-COPY setup-cron.service /etc/systemd/system/setup-cron.service
-RUN systemctl enable setup-cron.service
