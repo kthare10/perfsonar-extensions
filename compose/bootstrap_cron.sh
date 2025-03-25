@@ -10,7 +10,7 @@ PYTHON_BIN=$(which python3)
 # Create the cron file
 mkdir -p /etc/cron.d
 CRON_FILE=/etc/cron.d/pscheduler_cron
-echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS >> $LOG_FILE 2>&1" > $CRON_FILE
+echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS --output-dir /data >> $LOG_FILE 2>&1" > $CRON_FILE
 
 # Apply permissions
 chmod 0644 $CRON_FILE
