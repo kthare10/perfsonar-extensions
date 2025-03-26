@@ -35,7 +35,7 @@ Builds upon the official [perfsonar-testpoint-docker](https://github.com/perfson
 
 **Launch:**
 ```bash
-docker-compose up -d perfsonar-testpoint
+docker compose up -d perfsonar-testpoint
 docker exec -it perfsonar-testpoint /bin/bash /etc/cron.hourly/bootstrap_cron.sh
 ```
 
@@ -47,7 +47,7 @@ A lightweight container based on `rocky:9` that installs PerfSONAR command-line 
 
 **Launch:**
 ```bash
-docker-compose up -d perfsonar-tool
+docker compose up -d perfsonar-tool
 ```
 
 ---
@@ -105,13 +105,13 @@ Change interval as needed.
 ### Start Services:
 
 ```bash
-docker-compose up -d <container_name>
+docker compose up -d <container_name>
 ```
 
 ### Stop Services:
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ### View Logs:
