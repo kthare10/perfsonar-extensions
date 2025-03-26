@@ -10,8 +10,9 @@ services:
     tty: true
     stdin_open: true
     environment:
-      - HOSTS=23.134.232.210 23.134.232.242
+      - HOSTS=23.134.232.51
       - ARCHIVE=/usr/src/app/config.json
+      - URL=http://23.134.232.51:8000/api/save/
       - TZ=UTC
       - CRON_EXPRESSION=0 */2 * * *
     tmpfs:
