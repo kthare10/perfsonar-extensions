@@ -3,4 +3,4 @@ FROM perfsonar/testpoint:systemd
 LABEL maintainer="komal.thareja@gmail.com"
 
 # Install cron
-RUN apt install -y cron
+RUN apt update && apt install -y cron
