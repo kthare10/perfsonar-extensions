@@ -22,12 +22,14 @@ ALL_TOOLS = sorted(list(AVAILABLE_TESTS.keys()))
 CUSTOM_TEST_ARGS = {
     "latency": [],
     "rtt": [],
-    "throughput": ["--parallel", "4"],
+    "throughput-parallel": ["--parallel", "4"],
+    "throughput": [],
     "trace": [],
     "mtu": [],
     "clock": [],
     # Add other test-specific extra args if needed
 }
+
 
 def setup_logger(output_dir):
     """Configure logger with file and console output."""
@@ -57,7 +59,8 @@ def setup_logger(output_dir):
     logger.info(f"Logging to {log_file}")
     return logger
 
-def run_pscheduler_test(test, tool, host, output_dir, logger):
+
+def run_pscheduler_test(test, tool, host, output_dir, logger, archive):
     timestamp_utc = datetime.utcnow().strftime('%Y%m%d-%H%M%SZ')
     category_dir = os.path.join(output_dir, test)
     os.makedirs(category_dir, exist_ok=True)
@@ -65,13 +68,22 @@ def run_pscheduler_test(test, tool, host, output_dir, logger):
     output_file = f"{category_dir}/{host.replace(':', '_')}_{tool}_{timestamp_utc}.json"
 
     # Base pscheduler command
-    cmd = [
-        "pscheduler", "task",
-        "--tool", tool,
-        "--format", "json",
-        "--output", output_file,
-        test, "--dest", host
-    ]
+    if archive:
+        cmd = [
+            "pscheduler", "task", "--archive", f"@{archive}",
+            "--tool", tool,
+            "--format", "json",
+            "--output", output_file,
+            test, "--dest", host
+        ]
+    else:
+        cmd = [
+            "pscheduler", "task",
+            "--tool", tool,
+            "--format", "json",
+            "--output", output_file,
+            test, "--dest", host
+        ]
 
     # Add custom arguments if defined for tool
     extra_args = CUSTOM_TEST_ARGS.get(test, [])
@@ -86,12 +98,14 @@ def run_pscheduler_test(test, tool, host, output_dir, logger):
     except subprocess.CalledProcessError as e:
         logger.error(f"Error running {test} on {host}: {e}")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Run pscheduler tests between hosts and save JSON output.")
     parser.add_argument("--hosts", nargs="+", required=True, help="List of destination hosts")
     parser.add_argument("--output-dir", default="./pscheduler_results", help="Directory to save JSON results")
     parser.add_argument("--tests", nargs="+", choices=ALL_TOOLS, default=ALL_TOOLS, help="Tests to run (default: all available tests)")
     parser.add_argument("--list-tests", action="store_true", help="List all available tests and exit")
+    parser.add_argument("--archive", type=str, help="Location of the archive config")
 
     args = parser.parse_args()
 
@@ -113,9 +127,10 @@ def main():
             tools = AVAILABLE_TESTS.get(test)
             if tools:
                 for t in tools:
-                    run_pscheduler_test(test, t, host, args.output_dir, logger)
+                    run_pscheduler_test(test, t, host, args.output_dir, logger, args.archive)
 
     logger.info("All tests completed.")
+
 
 if __name__ == "__main__":
     main()

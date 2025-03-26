@@ -10,7 +10,8 @@ services:
     tty: true
     stdin_open: true
     environment:
-      - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
+      - HOSTS=23.134.232.210 23.134.232.242
+      - ARCHIVE=23.134.232.242
       - TZ=UTC
       - CRON_EXPRESSION=0 */2 * * *
     tmpfs:
