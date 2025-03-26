@@ -3,7 +3,7 @@
 # Define cron schedule
 CRON_SCHEDULE="${CRON_EXPRESSION:-*/5 * * * *}"
 HOSTS="${HOSTS:-localhost}"
-HOSTS="${ARCHIVE:-localhost}"
+ARCHIVE="${ARCHIVE:-/usr/src/app/config.json}"
 SCRIPT_PATH="/usr/src/app/periodic.py"
 LOG_FILE="/data/pscheduler_cron.log"
 PYTHON_BIN=$(which python3)
