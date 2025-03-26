@@ -1,4 +1,5 @@
 import argparse
+import json
 import subprocess
 import os
 from datetime import datetime, timezone
@@ -31,6 +32,29 @@ CUSTOM_TEST_ARGS = {
 }
 
 
+def send_file(url, filepath, category, timestamp_utc):
+    import requests  # Import locally to avoid global dependency
+    try:
+        with open(filepath, 'r') as f:
+            content = json.load(f)
+        payload = {
+            "timestamp_utc": timestamp_utc,
+            "category": category,
+            "filename": os.path.basename(filepath),
+            "content": content
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
+        r = requests.post(url, json=payload, headers=headers)
+        if r.status_code == 200:
+            print(f"Pushed: {filepath}")
+        else:
+            print(f"Push failed for {filepath}: {r.status_code} {r.text}")
+    except Exception as e:
+        print(f"Error pushing {filepath}: {e}")
+
+
 def setup_logger(output_dir):
     """Configure logger with file and console output."""
     log_dir = os.path.join(output_dir, "logs")
@@ -60,7 +84,7 @@ def setup_logger(output_dir):
     return logger
 
 
-def run_pscheduler_test(test, tool, host, output_dir, logger, archive):
+def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url):
     timestamp_utc = datetime.utcnow().strftime('%Y%m%d-%H%M%SZ')
     category_dir = os.path.join(output_dir, test)
     os.makedirs(category_dir, exist_ok=True)
@@ -94,6 +118,8 @@ def run_pscheduler_test(test, tool, host, output_dir, logger, archive):
     logger.debug(f"Command: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
+        if url:
+            send_file(url, output_file, test, timestamp_utc)
         logger.info(f"Completed {test} to {host}, output: {output_file}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Error running {test} on {host}: {e}")
@@ -106,6 +132,7 @@ def main():
     parser.add_argument("--tests", nargs="+", choices=ALL_TOOLS, default=ALL_TOOLS, help="Tests to run (default: all available tests)")
     parser.add_argument("--list-tests", action="store_true", help="List all available tests and exit")
     parser.add_argument("--archive", type=str, help="Location of the archive config")
+    parser.add_argument("--url", type=str, help="Remote Archive server url")
 
     args = parser.parse_args()
 
@@ -127,7 +154,8 @@ def main():
             tools = AVAILABLE_TESTS.get(test)
             if tools:
                 for t in tools:
-                    run_pscheduler_test(test, t, host, args.output_dir, logger, args.archive)
+                    run_pscheduler_test(test, t, host, args.output_dir, logger, args.archive,
+                                        args.url)
 
     logger.info("All tests completed.")
 
