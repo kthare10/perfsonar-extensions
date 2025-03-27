@@ -13,6 +13,7 @@ A set of PerfSONAR container extensions designed to automate periodic network pe
 - [Usage](#usage)
 - [Directory Structure](#directory-structure)
 - [Areas for Improvement](#areas-for-improvement)
+- [Setup Testpoint Container](#setup-testpoint-container)
 
 ---
 
@@ -138,10 +139,45 @@ Logs and results are stored in the `./data` directory for both services.
 └── README.md
 ```
 
----
+## Setup Measurement Container
 
-## Areas for Improvement
+### **Instructions for the Ubuntu VM (Student Environment)**
 
-- Additional documentation on test scheduling intervals and advanced configurations.
-- Optional support for metrics visualization dashboards (Grafana, Prometheus).
-- Integration scripts for alerting based on test failures or thresholds.
+1. **Provision or connect** to the Ubuntu VM onboard the ship.
+
+2. **Clone the repository and install Docker**:
+
+```bash
+git clone https://github.com/kthare10/perfsonar-extensions.git
+cd perfsonar-extensions
+./enable_docker.sh
+```
+
+3. **Update the `AUTH_TOKEN`** in the `docker-compose.yml` file under the `environment` section of the `perfsonar-testpoint` service.  
+   We will provide the `AUTH_TOKEN` value.
+
+```yaml
+services:
+  perfsonar-testpoint:
+    ...
+    environment:
+      - AUTH_TOKEN=<insert_token_here>
+```
+
+4. **Bring up the containers and initialize the scheduler**:
+
+```bash
+docker compose up -d perfsonar-testpoint
+docker exec -it perfsonar-testpoint /bin/bash /etc/cron.hourly/bootstrap_cron.sh
+```
+
+> **Note:** This container is configured to automatically run tests every 2 hours and store the results in:  
+> `perfsonar-extensions/data_testpoint`
+
+5. **At the end of the cruise**, archive and export the test results:
+
+```bash
+tar -zcvf data_testpoint.tgz perfsonar-extensions/data_testpoint
+```
+
+The resulting archive can then be transferred to a student’s laptop or uploaded to a cloud storage location for us to retrieve.
