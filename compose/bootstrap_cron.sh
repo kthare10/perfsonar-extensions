@@ -28,7 +28,7 @@ AUTH_TOKEN=${BEARER_TOKEN:-"Basic cGVyZnNvbmFyOjc0V0daZjRvcm9TdGZlUGx1WGVm"}
 ARCHIVER_IP=${HOST_IP:-"127.0.0.1"}
 
 # Write dynamic archiver config
-cat > /app/archiver.json <<EOF
+cat > $ARCHIVE <<EOF
 {
   "archiver": "http",
   "data": {
