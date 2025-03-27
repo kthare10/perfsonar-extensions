@@ -45,7 +45,7 @@ case $os_label in
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
         sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
         sudo apt-get update
-        setup_docker_config
+        #setup_docker_config
         sudo apt-get install -y docker-ce
         add_user_to_docker ubuntu
         sudo apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget python3.9 python3.9-full tcpdump iftop python3-pip
@@ -57,7 +57,7 @@ case $os_label in
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
         sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
         sudo apt-get update
-        setup_docker_config
+        #setup_docker_config
         sudo apt-get install -y docker-ce docker-ce-cli containerd.io
         add_user_to_docker ubuntu
         sudo apt-get install -y build-essential checkinstall libncursesw5-dev libssl-dev libsqlite3-dev tk-dev libgdbm-dev libc6-dev libbz2-dev wget tcpdump iftop python3-pip
@@ -71,7 +71,7 @@ case $os_label in
         echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
             sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         sudo apt-get update -y
-        setup_docker_config
+        #setup_docker_config
         sudo apt-get install -y docker-ce docker-ce-cli containerd.io
         add_user_to_docker ubuntu
         sudo apt-get install -y build-essential checkinstall libncursesw5-dev libssl-dev libsqlite3-dev \
@@ -82,7 +82,7 @@ case $os_label in
         sudo dnf install -y epel-release
         sudo dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
         sudo dnf install -y docker-ce docker-ce-cli containerd.io
-        setup_docker_config
+        #setup_docker_config
         sudo systemctl start docker
         add_user_to_docker rocky
         sudo dnf install -y https://repos.fedorapeople.org/repos/openstack/openstack-yoga/rdo-release-yoga-1.el8.noarch.rpm
@@ -97,7 +97,7 @@ case $os_label in
         sudo dnf install -y epel-release
         sudo dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
         sudo dnf install -y docker-ce docker-ce-cli containerd.io
-        setup_docker_config
+        #setup_docker_config
         sudo systemctl start docker
         add_user_to_docker rocky
         sudo dnf install -y libibverbs tcpdump net-tools python vim iftop
