@@ -35,6 +35,7 @@ setup_docker_config() {
 add_user_to_docker() {
     local user=$1
     sudo usermod -aG docker "$user"
+    newgrp docker
 }
 
 # OS-specific installation
