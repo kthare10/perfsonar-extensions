@@ -12,8 +12,7 @@ A set of PerfSONAR container extensions designed to automate periodic network pe
 - [Setup](#setup)
 - [Usage](#usage)
 - [Directory Structure](#directory-structure)
-- [Areas for Improvement](#areas-for-improvement)
-- [Setup Testpoint Container](#setup-testpoint-container)
+- [Setup Measurement Container](#setup-measurement-container)
 
 ---
 
