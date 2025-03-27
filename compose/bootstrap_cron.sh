@@ -22,3 +22,25 @@ crontab $CRON_FILE
 
 # Start cron service in background
 service cron start
+
+# Read env variables or use defaults
+AUTH_TOKEN=${BEARER_TOKEN:-"Basic cGVyZnNvbmFyOjc0V0daZjRvcm9TdGZlUGx1WGVm"}
+ARCHIVER_IP=${HOST_IP:-"127.0.0.1"}
+
+# Write dynamic archiver config
+cat > /app/archiver.json <<EOF
+{
+  "archiver": "http",
+  "data": {
+    "schema": 3,
+    "_url": "https://${ARCHIVER_IP}/logstash",
+    "verify-ssl": false,
+    "op": "put",
+    "_headers": {
+      "x-ps-observer": "{% scheduled_by_address %}",
+      "content-type": "application/json",
+      "Authorization": "${AUTH_TOKEN}"
+    }
+  }
+}
+EOF

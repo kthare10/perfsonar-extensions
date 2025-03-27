@@ -11,6 +11,8 @@ services:
     stdin_open: true
     environment:
       - HOSTS=23.134.232.51
+      - HOST_IP=23.134.232.51
+      - AUTH_TOKEN=abcdefgh1jkaksldk  # Change this before deployment
       - ARCHIVE=/usr/src/app/config.json
       - URL=http://23.134.232.51:8000/api/save/
       - TZ=UTC
