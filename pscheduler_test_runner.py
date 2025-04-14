@@ -24,12 +24,14 @@ CUSTOM_TEST_ARGS = {
     "latency": [],
     "rtt": [],
     "throughput-parallel": ["--parallel", "4"],
-    "throughput": [],
+    "throughput": ["-P", "4", "-t", "60"],
     "trace": [],
     "mtu": [],
     "clock": [],
     # Add other test-specific extra args if needed
 }
+
+IPERF_ARGS = ["-i", "10", "-o", "10"]
 
 
 def send_file(url, filepath, category, timestamp_utc):
@@ -113,6 +115,9 @@ def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url):
     extra_args = CUSTOM_TEST_ARGS.get(test, [])
     if extra_args:
         cmd.extend(extra_args)
+
+    if tool == "iperf3":
+        cmd.extend(IPERF_ARGS)
 
     logger.info(f"Running Test - {test} using {tool} to {host}")
     logger.debug(f"Command: {' '.join(cmd)}")
