@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define cron schedule
-CRON_SCHEDULE="${CRON_EXPRESSION:-0 * * * *}"
+CRON_SCHEDULE="${CRON_EXPRESSION:-0 */2 * * *}"
 #CRON_SCHEDULE="0 * * * *"
 HOSTS="${HOSTS:-localhost}"
 ARCHIVE="${ARCHIVE:-/usr/src/app/config.json}"
