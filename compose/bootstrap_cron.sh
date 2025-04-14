@@ -101,6 +101,10 @@ else
   echo "limits.conf not found at $LIMITS_FILE. Skipping patch."
 fi
 
+echo "Adding Ookla repository for Speedtest CLI..."
 curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
 
+echo "Installing Speedtest CLI..."
 sudo apt-get install -y speedtest
+
+echo "Speedtest CLI installation complete."
