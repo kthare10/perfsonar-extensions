@@ -85,12 +85,12 @@ def setup_logger(output_dir):
     return logger
 
 
-def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url, reverse=False, direction="forward"):
+def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url, reverse=False):
     timestamp_utc = datetime.utcnow().strftime('%Y%m%d-%H%M%SZ')
     category_dir = os.path.join(output_dir, test)
     os.makedirs(category_dir, exist_ok=True)
 
-    suffix = f"{direction}_{timestamp_utc}" if test == "throughput" else timestamp_utc
+    suffix = "reverse" if reverse else ""
     output_file = f"{category_dir}/{host.replace(':', '_')}_{tool}_{timestamp_utc}_{suffix}.json"
 
     # Base pscheduler command
@@ -122,7 +122,7 @@ def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url, reve
     if reverse and test == "throughput":
         cmd.append("--reverse")
 
-    logger.info(f"Running Test - {test} ({direction}) using {tool} to {host}")
+    logger.info(f"Running Test - {test} using {tool} to {host} reverse status: {reverse}")
     logger.debug(f"Command: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
@@ -172,8 +172,7 @@ def main():
                             test, t, host,
                             args.output_dir, logger,
                             args.archive, args.url,
-                            reverse=True,
-                            direction="reverse"
+                            reverse=True
                         )
 
     logger.info("All tests completed.")

@@ -82,6 +82,7 @@ if [ -f "$LIMITS_FILE" ]; then
     # Validate the modified file
     if jq empty "$TMP_LIMITS" >/dev/null 2>&1; then
       mv "$TMP_LIMITS" "$LIMITS_FILE"
+      chmod 0644 "$LIMITS_FILE"
       echo "Successfully updated throughput duration limit to 300s."
     else
       echo "Error: Modified limits.conf is not valid JSON. Aborting patch."
