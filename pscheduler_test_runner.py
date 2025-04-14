@@ -10,7 +10,6 @@ import logging
 AVAILABLE_TESTS = {
     "latency": ["owping", "twping", "halfping"],
     "rtt": ["ping", "tcpping", "twping"],
-    "throughput_reverse": ["iperf3", "nuttcp", "ethr"],
     "throughput": ["iperf3", "nuttcp", "ethr"],
     "trace": ["traceroute", "paris-traceroute", "tracepath"],
     "mtu": ["fwmtu"],
@@ -24,7 +23,6 @@ ALL_TOOLS = sorted(list(AVAILABLE_TESTS.keys()))
 CUSTOM_TEST_ARGS = {
     "latency": [],
     "rtt": [],
-    "throughput_reverse": ["-P", "4", "-t", "180", "--reverse"],
     "throughput": ["-P", "4", "-t", "180"],
     "trace": [],
     "mtu": [],
@@ -87,12 +85,13 @@ def setup_logger(output_dir):
     return logger
 
 
-def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url):
+def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url, reverse=False, direction="forward"):
     timestamp_utc = datetime.utcnow().strftime('%Y%m%d-%H%M%SZ')
     category_dir = os.path.join(output_dir, test)
     os.makedirs(category_dir, exist_ok=True)
 
-    output_file = f"{category_dir}/{host.replace(':', '_')}_{tool}_{timestamp_utc}.json"
+    suffix = f"{direction}_{timestamp_utc}" if test == "throughput" else timestamp_utc
+    output_file = f"{category_dir}/{host.replace(':', '_')}_{tool}_{timestamp_utc}_{suffix}.json"
 
     # Base pscheduler command
     if archive:
@@ -120,7 +119,10 @@ def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url):
     if tool == "iperf3":
         cmd.extend(IPERF_ARGS)
 
-    logger.info(f"Running Test - {test} using {tool} to {host}")
+    if reverse and test == "throughput":
+        cmd.append("--reverse")
+
+    logger.info(f"Running Test - {test} ({direction}) using {tool} to {host}")
     logger.debug(f"Command: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
@@ -137,6 +139,7 @@ def main():
     parser.add_argument("--output-dir", default="./pscheduler_results", help="Directory to save JSON results")
     parser.add_argument("--tests", nargs="+", choices=ALL_TOOLS, default=ALL_TOOLS, help="Tests to run (default: all available tests)")
     parser.add_argument("--list-tests", action="store_true", help="List all available tests and exit")
+    parser.add_argument("--reverse", action="store_true", help="Additionally run throughput tests in reverse direction")
     parser.add_argument("--archive", type=str, help="Location of the archive config")
     parser.add_argument("--url", type=str, help="Remote Archive server url")
 
@@ -162,6 +165,16 @@ def main():
                 for t in tools:
                     run_pscheduler_test(test, t, host, args.output_dir, logger, args.archive,
                                         args.url)
+
+                    # Run reverse test if requested and this is a throughput test
+                    if True and test == "throughput":
+                        run_pscheduler_test(
+                            test, t, host,
+                            args.output_dir, logger,
+                            args.archive, args.url,
+                            reverse=True,
+                            direction="reverse"
+                        )
 
     logger.info("All tests completed.")
 
