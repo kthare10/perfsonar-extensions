@@ -100,3 +100,7 @@ if [ -f "$LIMITS_FILE" ]; then
 else
   echo "limits.conf not found at $LIMITS_FILE. Skipping patch."
 fi
+
+curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
+
+sudo apt-get install -y speedtest

@@ -175,7 +175,33 @@ def main():
                             reverse=True
                         )
 
+    run_speedtest(output_dir=args.output_dir, logger=logger, url=args.url)
+
     logger.info("All tests completed.")
+
+
+def run_speedtest(output_dir, logger, url=None):
+    timestamp_utc = datetime.utcnow().strftime('%Y%m%d-%H%M%SZ')
+    output_file = os.path.join(output_dir, f"speedtest_{timestamp_utc}.json")
+
+    logger.info("Running speedtest CLI...")
+
+    try:
+        result = subprocess.run(
+            ["speedtest", "--accept-license", "--accept-gdpr", "-f", "json"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
+        )
+
+        with open(output_file, "w") as f:
+            f.write(result.stdout)
+
+        logger.info(f"Speedtest completed. Results saved to: {output_file}")
+
+        if url:
+            send_file(url, output_file, "speedtest", timestamp_utc)
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Speedtest failed: {e.stderr}")
 
 
 if __name__ == "__main__":
