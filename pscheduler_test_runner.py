@@ -24,14 +24,14 @@ CUSTOM_TEST_ARGS = {
     "latency": [],
     "rtt": [],
     "throughput-parallel": ["--parallel", "4"],
-    "throughput": ["-P", "4", "-t", "60"],
+    "throughput": ["-P", "4", "-t", "180"],
     "trace": [],
     "mtu": [],
     "clock": [],
     # Add other test-specific extra args if needed
 }
 
-IPERF_ARGS = ["-i", "10", "-o", "10"]
+IPERF_ARGS = ["-i", "10", "-O", "10"]
 
 
 def send_file(url, filepath, category, timestamp_utc):
