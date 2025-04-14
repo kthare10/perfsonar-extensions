@@ -10,6 +10,7 @@ import logging
 AVAILABLE_TESTS = {
     "latency": ["owping", "twping", "halfping"],
     "rtt": ["ping", "tcpping", "twping"],
+    "throughput_reverse": ["iperf3", "nuttcp", "ethr"],
     "throughput": ["iperf3", "nuttcp", "ethr"],
     "trace": ["traceroute", "paris-traceroute", "tracepath"],
     "mtu": ["fwmtu"],
@@ -23,7 +24,7 @@ ALL_TOOLS = sorted(list(AVAILABLE_TESTS.keys()))
 CUSTOM_TEST_ARGS = {
     "latency": [],
     "rtt": [],
-    "throughput-parallel": ["--parallel", "4"],
+    "throughput_reverse": ["-P", "4", "-t", "180", "--reverse"],
     "throughput": ["-P", "4", "-t", "180"],
     "trace": [],
     "mtu": [],
