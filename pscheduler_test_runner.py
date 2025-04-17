@@ -167,7 +167,7 @@ def main():
                                         args.url)
 
                     # Run reverse test if requested and this is a throughput test
-                    if True and test in ["throughput", "latency"]:
+                    if True and test in ["throughput", "latency"] and t not in ["halfping"]:
                         run_pscheduler_test(
                             test, t, host,
                             args.output_dir, logger,
