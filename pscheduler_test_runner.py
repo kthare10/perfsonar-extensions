@@ -167,7 +167,7 @@ def main():
                                         args.url)
 
                     # Run reverse test if requested and this is a throughput test
-                    if True and test == "throughput":
+                    if True and test in ["throughput", "latency"]:
                         run_pscheduler_test(
                             test, t, host,
                             args.output_dir, logger,
