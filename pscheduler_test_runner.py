@@ -9,9 +9,9 @@ import logging
 # Available tools categorized
 AVAILABLE_TESTS = {
     "latency": ["owping", "twping", "halfping"],
-    "rtt": ["ping", "tcpping", "twping"],
-    "throughput": ["iperf3", "nuttcp", "ethr"],
-    "trace": ["traceroute", "paris-traceroute", "tracepath"],
+    "rtt": ["ping", "tcpping"],
+    "throughput": ["iperf3"],
+    "trace": ["traceroute", "tracepath"],
     "mtu": ["fwmtu"],
     "clock": ["psclock"]
 }
@@ -23,7 +23,7 @@ ALL_TOOLS = sorted(list(AVAILABLE_TESTS.keys()))
 CUSTOM_TEST_ARGS = {
     "latency": [],
     "rtt": [],
-    "throughput": ["-P", "4", "-t", "180"],
+    "throughput": ["-P", "4", "-t", "60"],
     "trace": [],
     "mtu": [],
     "clock": [],
@@ -119,7 +119,7 @@ def run_pscheduler_test(test, tool, host, output_dir, logger, archive, url, reve
     if tool == "iperf3":
         cmd.extend(IPERF_ARGS)
 
-    if reverse and test == "throughput":
+    if reverse and test in ["throughput", "latency"]:
         cmd.append("--reverse")
 
     logger.info(f"Running Test - {test} using {tool} to {host} reverse status: {reverse}")
@@ -175,7 +175,7 @@ def main():
                             reverse=True
                         )
 
-    run_speedtest(output_dir=args.output_dir, logger=logger, url=args.url)
+    #run_speedtest(output_dir=args.output_dir, logger=logger, url=args.url)
 
     logger.info("All tests completed.")
 
