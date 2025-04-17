@@ -2,7 +2,7 @@
 
 # Define cron schedule
 CRON_SCHEDULE="${CRON_EXPRESSION:-0 */2 * * *}"
-#CRON_SCHEDULE="0 * * * *"
+CRON_SCHEDULE="0 */6 * * *"
 HOSTS="${HOSTS:-localhost}"
 ARCHIVE="${ARCHIVE:-/usr/src/app/config.json}"
 URL="${URL:-localhost}"
