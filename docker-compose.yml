@@ -10,13 +10,13 @@ services:
     tty: true
     stdin_open: true
     environment:
-      - HOSTS=23.134.232.51
-      - HOST_IP=23.134.232.51
-      - AUTH_TOKEN=abcdefgh1jkaksldk  # Change this before deployment
-      - ARCHIVE=/usr/src/app/config.json
-      - URL=http://23.134.232.51:8000/api/save/
-      - TZ=UTC
-      - CRON_EXPRESSION=0 */2 * * *
+      - HOSTS=${HOSTS:-23.134.232.51}
+      - HOST_IP=${HOST_IP:-23.134.232.51}
+      - AUTH_TOKEN=${AUTH_TOKEN:-changeme}  # Change this before deployment
+      - ARCHIVE=${ARCHIVE:-/usr/src/app/config.json}
+      - URL=${URL:-http://23.134.232.51:8000/api/save/}
+      - TZ=${TZ:-UTC}
+      - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */2 * * *}
     tmpfs:
       - /run
       - /run/lock
