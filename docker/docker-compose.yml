@@ -22,12 +22,12 @@ services:
       - /run/lock
       - /tmp
     volumes:
-      - ./compose/config.json:/usr/src/app/config.json
+      - compose/config.json:/usr/src/app/config.json
       - ./pscheduler_test_runner.py:/usr/src/app/periodic.py
       - ./compose/bootstrap_cron.sh:/etc/cron.hourly/bootstrap_cron.sh
       - ./data_testpoint:/data  # Results & logs outside
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - ./compose/psconfig:/etc/perfsonar/psconfig
+      - compose/psconfig:/etc/perfsonar/psconfig
     restart: always
 
   perfsonar-tool:

@@ -1,0 +1,43 @@
+{
+    "_meta":{
+        "display-name": "Ship to Shore Measurements"
+    },
+    "archives": {
+    "http_archive":
+   {
+    "archiver": "http",
+    "data": {
+        "schema": 3,
+        "_url": "https://localhost/logstash",
+        "verify-ssl": false,
+        "op": "put",
+        "_headers": {
+            "x-ps-observer": "{% scheduled_by_address %}",
+            "content-type": "application/json"
+        }
+    },
+    "_meta": {
+        "esmond_url": "https://localhost/esmond/perfsonar/archive/"
+    }
+   }},
+
+    "addresses": {
+        
+    },
+
+    "groups": {
+        
+    },
+
+    "tests": {
+        
+    },
+
+    "schedules": {
+        
+    },
+
+    "tasks": {
+        
+    }
+}
