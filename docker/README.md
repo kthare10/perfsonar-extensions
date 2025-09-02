@@ -1,4 +1,4 @@
-# perfsonar-extensions
+# perfsonar-extensions-docker
 
 A set of PerfSONAR container extensions designed to automate periodic network performance monitoring tests across a defined set of hosts.
 
