@@ -1,4 +1,5 @@
 import json
+import argparse
 
 class PSConfigBuilder:
     """
@@ -67,6 +68,8 @@ class PSConfigBuilder:
 
         # Collect all address names for mesh group
         address_names = list(config["addresses"].keys())
+        # Assuming the first address is central-TOKY and the second is remote-MAX
+        # to match the user's scenario. Adjust as needed.
         source_name = address_names[0] if len(address_names) > 0 else ""
         dest_name = address_names[1] if len(address_names) > 1 else ""
 
@@ -90,84 +93,11 @@ class PSConfigBuilder:
                 json.dump(config, f, indent=4)
             return
 
-        # Add test definitions for throughput, latencybg, trace, rtt, mtu, and clock
-        config["tests"].update({
-            f"{source_name}_{dest_name}_throughput": {
-                "type": "throughput",
-                "spec": {
-                    "source": "{% address[0] %}",
-                    "dest": "{% address[1] %}",
-                    "duration": "PT60S",
-                    "interval": "PT10S",
-                    "omit": "PT10S",
-                    **({"parallel": parallel_streams} if parallel_streams else {})
-                }
-            },
-            f"{dest_name}_{source_name}_throughput": {
-                "type": "throughput",
-                "spec": {
-                    "source": "{% address[1] %}",
-                    "dest": "{% address[0] %}",
-                    "duration": "PT60S",
-                    "interval": "PT10S",
-                    "omit": "PT10S",
-                    **({"parallel": parallel_streams} if parallel_streams else {})
-                }
-            },
-            f"{source_name}_{dest_name}_latencybg": {
-                "type": "latencybg",
-                "spec": {
-                    "source": "{% address[0] %}",
-                    "dest": "{% address[1] %}",
-                    "flip": "{% flip %}"
-                }
-            },
-            f"{dest_name}_{source_name}_latencybg": {
-                "type": "latencybg",
-                "spec": {
-                    "source": "{% address[1] %}",
-                    "dest": "{% address[0] %}",
-                    "flip": "{% flip %}"
-                }
-            },
-            f"{source_name}_{dest_name}_trace": {
-                "type": "trace",
-                "spec": {
-                    "source": "{% address[0] %}",
-                    "dest": "{% address[1] %}"
-                }
-            },
-            f"{source_name}_{dest_name}_rtt": {
-                "type": "rtt",
-                "spec": {
-                    "source": "{% address[0] %}",
-                    "dest": "{% address[1] %}"
-                }
-            },
-            f"{dest_name}_{source_name}_rtt": {
-                "type": "rtt",
-                "spec": {
-                    "source": "{% address[1] %}",
-                    "dest": "{% address[0] %}"
-                }
-            },
-            f"{source_name}_{dest_name}_mtu": {
-                "type": "mtu",
-                "spec": {
-                    "source": "{% address[0] %}",
-                    "dest": "{% address[1] %}"
-                }
-            },
-            f"{source_name}_{dest_name}_clock": {
-                "type": "clock",
-                "spec": {
-                    "source": "{% address[0] %}",
-                    "dest": "{% address[1] %}"
-                }
-            },
-        })
+        # Define common source/dest mapping for readability
+        forward_source = "{% address[0] %}"
+        forward_dest = "{% address[1] %}"
 
-        # Add schedules for the tests (only the selected interval)
+        # Add schedules for the tests
         config["schedules"].update({
             f"{source_name}_{dest_name}_schedule_PT{schedule_interval}": {
                 "repeat": interval_str,
@@ -181,112 +111,203 @@ class PSConfigBuilder:
             }
         })
 
-        if not minimal:
-            # Add tasks for each test, referencing the appropriate group, test, schedule, and archives
-            config["tasks"].update({
-                f"{source_name}_{dest_name}_task_trace": {
-                    "group": "all_mesh",
-                    "test": f"{source_name}_{dest_name}_trace",
-                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
-                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"Traceroute Tests {source_name} to {dest_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+        # Add test definitions
+        config["tests"].update({
+            # Forward Throughput
+            f"{source_name}_{dest_name}_throughput": {
+                "type": "throughput",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest,
+                    "duration": "PT60S",
+                    "interval": "PT10S",
+                    "omit": "PT10S",
+                    **({"parallel": parallel_streams} if parallel_streams else {})
                 }
-            })
-        else:
-            # Add tasks for each test, referencing the appropriate group, test, schedule, and archives
+            },
+            # Reverse Throughput
+            f"{source_name}_{dest_name}_throughput_reverse": {
+                "type": "throughput",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest,
+                    "duration": "PT60S",
+                    "interval": "PT10S",
+                    "omit": "PT10S",
+                    "reverse": True,
+                    **({"parallel": parallel_streams} if parallel_streams else {})
+                }
+            },
+            # Forward Latency
+            f"{source_name}_{dest_name}_latencybg": {
+                "type": "latencybg",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest,
+                    "flip": False
+                }
+            },
+            # Reverse Latency
+            f"{source_name}_{dest_name}_latencybg_reverse": {
+                "type": "latencybg",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest,
+                    "flip": True
+                }
+            },
+            # Forward Trace
+            f"{source_name}_{dest_name}_trace": {
+                "type": "trace",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest
+                }
+            },
+            # Forward RTT
+            f"{source_name}_{dest_name}_rtt": {
+                "type": "rtt",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest
+                }
+            },
+            # Forward MTU
+            f"{source_name}_{dest_name}_mtu": {
+                "type": "mtu",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest
+                }
+            },
+            # Forward Clock
+            f"{source_name}_{dest_name}_clock": {
+                "type": "clock",
+                "spec": {
+                    "source": forward_source,
+                    "dest": forward_dest
+                }
+            }
+        })
+
+        if not minimal:
+            # Full task set, including traces
             config["tasks"].update({
                 f"{source_name}_{dest_name}_task_throughput": {
                     "group": "all_mesh",
                     "test": f"{source_name}_{dest_name}_throughput",
                     "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"Throughput Tests {source_name} to {dest_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"Throughput Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
                 },
-                f"{dest_name}_{source_name}_task_throughput": {
+                f"{dest_name}_{source_name}_task_throughput_reverse": {
                     "group": "all_mesh",
-                    "test": f"{dest_name}_{source_name}_throughput",
+                    "test": f"{dest_name}_{source_name}_throughput_reverse",
                     "schedule": f"{dest_name}_{source_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"Throughput Tests {dest_name} to {source_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"Reverse Throughput Tests {dest_name} to {source_name}", "display-task-group": ["Automated Tests"] }
                 },
                 f"{source_name}_{dest_name}_task_latencybg": {
                     "group": "all_mesh",
                     "test": f"{source_name}_{dest_name}_latencybg",
                     "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"Latency Tests {source_name} to {dest_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"Latency Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
                 },
-                f"{dest_name}_{source_name}_task_latencybg": {
+                f"{dest_name}_{source_name}_task_latencybg_reverse": {
                     "group": "all_mesh",
-                    "test": f"{dest_name}_{source_name}_latencybg",
+                    "test": f"{dest_name}_{source_name}_latencybg_reverse",
                     "schedule": f"{dest_name}_{source_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"Latency Tests {dest_name} to {source_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"Reverse Latency Tests {dest_name} to {source_name}", "display-task-group": ["Automated Tests"] }
                 },
                 f"{source_name}_{dest_name}_task_trace": {
                     "group": "all_mesh",
                     "test": f"{source_name}_{dest_name}_trace",
                     "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"Traceroute Tests {source_name} to {dest_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"Traceroute Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
                 },
                 f"{source_name}_{dest_name}_task_rtt": {
                     "group": "all_mesh",
                     "test": f"{source_name}_{dest_name}_rtt",
                     "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"RTT Tests {source_name} to {dest_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
-                },
-                f"{dest_name}_{source_name}_task_rtt": {
-                    "group": "all_mesh",
-                    "test": f"{dest_name}_{source_name}_rtt",
-                    "schedule": f"{dest_name}_{source_name}_schedule_PT{schedule_interval}",
-                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"RTT Tests {dest_name} to {source_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"RTT Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
                 },
                 f"{source_name}_{dest_name}_task_mtu": {
                     "group": "all_mesh",
                     "test": f"{source_name}_{dest_name}_mtu",
                     "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"MTU Tests {source_name} to {dest_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"MTU Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
                 },
                 f"{source_name}_{dest_name}_task_clock": {
                     "group": "all_mesh",
                     "test": f"{source_name}_{dest_name}_clock",
                     "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
                     "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
-                    "reference": {
-                        "display-task-name": f"Clock Tests {source_name} to {dest_name}",
-                        "display-task-group": ["Automated Tests"]
-                    }
+                    "reference": { "display-task-name": f"Clock Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                }
+            })
+        else:
+            # Minimal task set
+            config["tasks"].update({
+                f"{source_name}_{dest_name}_task_throughput": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_throughput",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"Throughput Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                },
+                f"{source_name}_{dest_name}_task_throughput_reverse": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_throughput_reverse",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"Reverse Throughput Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                },
+                f"{source_name}_{dest_name}_task_latencybg": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_latencybg",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"Latency Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                },
+                f"{source_name}_{dest_name}_task_latencybg_reverse": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_latencybg_reverse",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"Reverse Latency Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                },
+                f"{source_name}_{dest_name}_task_trace": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_trace",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"Traceroute Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                },
+                f"{source_name}_{dest_name}_task_rtt": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_rtt",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"RTT Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                },
+                f"{source_name}_{dest_name}_task_mtu": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_mtu",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"MTU Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
+                },
+                f"{source_name}_{dest_name}_task_clock": {
+                    "group": "all_mesh",
+                    "test": f"{source_name}_{dest_name}_clock",
+                    "schedule": f"{source_name}_{dest_name}_schedule_PT{schedule_interval}",
+                    "archives": ["http_archive", "remote_http_archive"] if remote else ["http_archive"],
+                    "reference": { "display-task-name": f"Clock Tests {source_name} to {dest_name}", "display-task-group": ["Automated Tests"] }
                 }
             })
 
@@ -296,7 +317,6 @@ class PSConfigBuilder:
 
 if __name__ == "__main__":
     # Parse command line arguments for source/destination info and config file paths
-    import argparse
     parser = argparse.ArgumentParser(description="Add tests to psconfig.json")
     # Accept a list of hosts and IPs for sources and destinations
     parser.add_argument("--host_list", nargs="+", metavar=("NAME", "IP"), help="List of host name/IP pairs (e.g. --host_list host1 1.2.3.4 host1 5.6.7.8)")
