@@ -103,11 +103,6 @@ class PSConfigBuilder:
                 "repeat": interval_str,
                 "sliprand": True,
                 "slip": interval_str
-            },
-            f"{dest_name}_{source_name}_schedule_PT{schedule_interval}": {
-                "repeat": interval_str,
-                "sliprand": True,
-                "slip": interval_str
             }
         })
 
