@@ -8,7 +8,7 @@ It configures `/etc/hosts`, installs perfSONAR, applies Logstash access controls
 ## Usage
 
 ```bash
-./perfsonar_setup.sh <SHORE_HOSTNAME> <SHORE_IP> <SHIP_HOSTNAME> <SHIP_IP> [options]
+./perfsonar_setup.sh <SHIP_HOSTNAME> <SHIP_IP> <SHORE_HOSTNAME> <SHORE_IP> [options]
 ````
 
 ### Required Arguments
