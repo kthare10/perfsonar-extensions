@@ -3,23 +3,24 @@ set -euo pipefail
 
 # perfSONAR setup helper
 # Usage:
-#   ./perfsonar_setup.sh <SHORE_HOSTNAME> <SHORE_IP> <SHIP_HOSTNAME> <SHIP_IP> [--remote REMOTE_IP] [--no-add-tests] [--interval <10M|2H|4H|6H>]
+#   ./perfsonar_setup.sh <SHIP_HOSTNAME> <SHIP_IP> <SHORE_HOSTNAME> <SHORE_IP>  [--remote REMOTE_IP] [--no-add-tests] [--interval <10M|2H|4H|6H>]
 #
 # Examples:
-#   ./perfsonar_setup.sh shore-STAR 23.134.232.50 ship-LOSA 23.134.233.34
-#   ./perfsonar_setup.sh shore-STAR 23.134.232.50 ship-LOSA 23.134.233.34 --no-add-tests --interval 2H
-#   ./perfsonar_setup.sh shore-STAR 23.134.232.50 ship-LOSA 23.134.233.34 --remote 23.134.232.50 --interval 10M
+#   ./perfsonar_setup.sh ship-LOSA 23.134.233.34 shore-STAR 23.134.232.50 
+#   ./perfsonar_setup.sh ship-LOSA 23.134.233.34 shore-STAR 23.134.232.50 --no-add-tests --interval 2H
+#   ./perfsonar_setup.sh ship-LOSA 23.134.233.34 shore-STAR 23.134.232.50 --remote 23.134.232.50 --interval 10M
 
 # ---------- args ----------
 if [[ $# -lt 4 ]]; then
-  echo "Usage: $0 <SHORE_HOSTNAME> <SHORE_IP> <SHIP_HOSTNAME> <SHIP_IP> [--remote REMOTE_IP] [--no-add-tests] [--interval <10M|2H|4H|6H>]" >&2
+  echo "Usage: $0 <SHIP_HOSTNAME> <SHIP_IP> <SHORE_HOSTNAME> <SHORE_IP> [--remote REMOTE_IP] [--no-add-tests] [--interval <10M|2H|4H|6H>]" >&2
   exit 64
 fi
 
-SHORE_HOST="$1"
-SHORE_IP="$2"
-SHIP_HOST="$3"
-SHIP_IP="$4"
+SHIP_HOST="$1"
+SHIP_IP="$2"
+SHORE_HOST="$3"
+SHORE_IP="$4"
+
 shift 4
 
 REMOTE_IP=""
@@ -71,12 +72,21 @@ sudo_run() {
   fi
 }
 
+# Remove any existing /etc/hosts lines that contain the exact hostname as a token,
+# then append the fresh "IP hostname" line.
 update_hosts_entry() {
   local ip="$1" host="$2"
   local hosts_file="/etc/hosts"
-  if grep -qE "(^|[[:space:]])${host}([[:space:]]|$)" "$hosts_file"; then
-    sudo_run sed -i.bak "/(^|[[:space:]])${host}([[:space:]]|$)/d" "$hosts_file"
-  fi
+  local tmp
+  tmp="$(mktemp)"
+
+  # Delete lines where the hostname appears as a whole token (begin/end or whitespace-delimited)
+  # Use ERE (-E); keep a backup once.
+  sudo_run sed -E "/(^|[[:space:]])${host}([[:space:]]|\$)/d" "$hosts_file" > "$tmp"
+  sudo_run install -m 644 "$tmp" "$hosts_file"
+  rm -f "$tmp"
+
+  # Append the new mapping
   echo "${ip} ${host}" | sudo_run tee -a "$hosts_file" >/dev/null
 }
 
@@ -100,7 +110,7 @@ mkdir -p psconfig
 CMD=( python3 psconfig/psconfig_builder.py
   --base_config_file "$BASE_PSCONFIG"
   --output_file "$OUT_PSCONFIG"
-  --host_list "$SHORE_HOST" "$SHORE_IP" "$SHIP_HOST" "$SHIP_IP"
+  --host_list "$SHIP_HOST" "$SHIP_IP" "$SHORE_HOST" "$SHORE_IP" 
 )
 
 if [[ -n "$REMOTE_IP" ]]; then
