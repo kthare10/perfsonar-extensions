@@ -9,7 +9,7 @@ import logging
 from typing import List, Optional
 
 
-from archiver_client import ArchiverClient, NodeRef, MeasurementRequest, ArchiverError, ArchiverHTTPError
+from archiver_client.archiver_client import ArchiverClient, NodeRef, MeasurementRequest, ArchiverError, ArchiverHTTPError
 
 # Available tests categorized by logical category -> supported tools
 AVAILABLE_TESTS = {
@@ -169,7 +169,7 @@ def archive_result_to_endpoints(
     method_name = _category_to_method_name(category)
 
     for base_url in archiver_urls:
-        client = ArchiverClient(base_url=base_url, bearer_token=auth_token)  # auth picked up from env if set
+        client = ArchiverClient(base_url=base_url, bearer_token=auth_token, verify=False)  # auth picked up from env if set
         try:
             method = getattr(client, method_name)
             resp = method(req, upsert=True)  # keep upsert defaulting to True

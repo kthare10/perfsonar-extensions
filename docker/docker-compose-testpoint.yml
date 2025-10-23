@@ -24,5 +24,5 @@ services:
       - ./compose/bootstrap_cron.sh:/etc/cron.hourly/bootstrap_cron.sh
       - ./data_testpoint:/data  # Results & logs outside
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - compose/psconfig:/etc/perfsonar/psconfig
+      - ./compose/psconfig:/etc/perfsonar/psconfig
     restart: always
