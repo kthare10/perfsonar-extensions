@@ -1,0 +1,16 @@
+services:
+  perfsonar-tool:
+    build:
+      context: .
+      dockerfile: Dockerfile-perfsonar-tool
+    container_name: perfsonar-tool
+    image: kthare10/perfsonar-tool
+    tty: true
+    stdin_open: true
+    environment:
+      - HOSTS=23.134.232.210 23.134.232.242  # Correct syntax
+      - TZ=UTC
+      - INTERVAL=0 */2 * * * # Example: Run every 2 hours
+    volumes:
+      - ./data_tools:/data  # Results & logs outside
+    restart: always

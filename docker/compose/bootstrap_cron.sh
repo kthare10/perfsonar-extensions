@@ -4,8 +4,8 @@
 CRON_SCHEDULE="${CRON_EXPRESSION:-0 */2 * * *}"
 CRON_SCHEDULE="0 */6 * * *"
 HOSTS="${HOSTS:-localhost}"
-ARCHIVE_URLS="${ARCHIVE_URLS:-/usr/src/app/config.json}"
-URL="${URL:-localhost}"
+ARCHIVE_URLS="${ARCHIVE_URLS:-https://localhost:8443/ps}"
+AUTH_TOKEN="${AUTH_TOKEN:-changeme}"
 SCRIPT_PATH="/usr/src/app/periodic.py"
 LOG_FILE="/data/pscheduler_cron.log"
 PYTHON_BIN=$(which python3)
@@ -17,7 +17,7 @@ crontab -r 2>/dev/null
 # Create the cron file
 mkdir -p /etc/cron.d
 CRON_FILE=/etc/cron.d/pscheduler_cron
-echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS --output-dir /data --archiver-urls $ARCHIVE_URLS >> $LOG_FILE 2>&1" > $CRON_FILE
+echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS --output-dir /data --archiver-urls $ARCHIVE_URLS --auth-token $AUTH_TOKEN >> $LOG_FILE 2>&1" > $CRON_FILE
 
 # Apply permissions
 chmod 0644 $CRON_FILE

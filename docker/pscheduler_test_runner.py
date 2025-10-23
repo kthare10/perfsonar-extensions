@@ -132,6 +132,16 @@ def _category_to_method_name(category: str) -> str:
         "clock": "create_clock_measurement",
     }[category]
 
+def _resolve_auth_token(cli_token: Optional[str]) -> Optional[str]:
+    """
+    Resolve bearer token from:
+      1) CLI --auth-token
+      2) ENV AUTH_TOKEN
+      3) ENV ARCHIVER_BEARER
+    Returns None if not set.
+    """
+    tok = (cli_token or os.environ.get("AUTH_TOKEN") or os.environ.get("ARCHIVER_BEARER") or "").strip()
+    return tok or None
 
 def archive_result_to_endpoints(
     archiver_urls: List[str],
@@ -141,6 +151,7 @@ def archive_result_to_endpoints(
     dst: NodeRef,
     reverse: bool,
     logger: logging.Logger,
+    auth_token: str
 ) -> None:
     """
     Sends the raw pscheduler JSON to each archiver base URL using the matching endpoint.
@@ -158,7 +169,7 @@ def archive_result_to_endpoints(
     method_name = _category_to_method_name(category)
 
     for base_url in archiver_urls:
-        client = ArchiverClient(base_url=base_url)  # auth picked up from env if set
+        client = ArchiverClient(base_url=base_url, bearer_token=auth_token)  # auth picked up from env if set
         try:
             method = getattr(client, method_name)
             resp = method(req, upsert=True)  # keep upsert defaulting to True
@@ -178,6 +189,7 @@ def run_pscheduler_test(
     output_dir: str,
     logger: logging.Logger,
     archiver_urls: List[str],
+    auth_token: str,
     reverse: bool = False,
 ):
     timestamp_utc = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')
@@ -221,23 +233,54 @@ def run_pscheduler_test(
                 dst=dst,
                 reverse=reverse,
                 logger=logger,
+                auth_token=auth_token
             )
     except subprocess.CalledProcessError as e:
         logger.error(f"Error running {test} ({tool_tag}) on {host}: {e}")
 
 
+def _split_urls(raw: str) -> list[str]:
+    """
+    Split a string that may contain URLs separated by commas and/or semicolons.
+    Strips whitespace and trailing slashes.
+    """
+    urls: list[str] = []
+    for chunk in (raw or "").replace(";", ",").split(","):
+        u = chunk.strip().rstrip("/")
+        if u:
+            urls.append(u)
+    return urls
+
+
 def _parse_archiver_urls(cli_value: Optional[List[str]]) -> List[str]:
     """
     Accepts:
-      - --archiver-urls http://a http://b
-      - or env ARCHIVER_URLS="http://a,https://b"
+      - CLI: --archiver-urls https://a https://b
+      - CLI (comma-separated): --archiver-urls https://a,https://b
+      - ENV: ARCHIVER_URLS="https://a,https://b"
+      - ENV (compose case): ARCHIVE_URLS="https://a,https://b"
+    Returns a de-duplicated, order-preserved list of base URLs with trailing '/' removed.
     """
-    if cli_value and len(cli_value) > 0:
-        return [u.rstrip("/") for u in cli_value if u.strip()]
-    env_val = os.environ.get("ARCHIVER_URLS", "").strip()
-    if env_val:
-        return [u.strip().rstrip("/") for u in env_val.split(",") if u.strip()]
-    return []
+    collected: list[str] = []
+
+    # From CLI (support both space- and comma-separated)
+    if cli_value:
+        for item in cli_value:
+            collected.extend(_split_urls(item))
+
+    # From ENV (support both names)
+    env_val = os.environ.get("ARCHIVER_URLS") or os.environ.get("ARCHIVE_URLS") or ""
+    if env_val.strip():
+        collected.extend(_split_urls(env_val))
+
+    # De-dup while preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for u in collected:
+        if u not in seen:
+            deduped.append(u)
+            seen.add(u)
+    return deduped
 
 
 def main():
@@ -260,6 +303,11 @@ def main():
     parser.add_argument("--archiver-urls", nargs="+",
                         help="One or more archiver base URLs (e.g., https://archiver.example.org http://localhost:8080). "
                              "Alternatively set ARCHIVER_URLS='url1,url2' env var.")
+
+    parser.add_argument(
+        "--auth-token",
+        help="Bearer token for archiver APIs. If omitted, uses AUTH_TOKEN or ARCHIVER_BEARER env vars."
+    )
 
     # Tool selection controls
     parser.add_argument(
@@ -290,12 +338,23 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     logger = setup_logger(args.output_dir)
 
+    auth_token = _resolve_auth_token(args.auth_token)
+    if auth_token:
+        # Make it visible to ArchiverClient (which reads ARCHIVER_BEARER)
+        os.environ["ARCHIVER_BEARER"] = auth_token
+        logger.info("Auth via ARCHIVER_BEARER or ARCHIVER_API_KEY (overridden by --auth-token / AUTH_TOKEN).")
+    else:
+        logger.info("Archiver auth: none provided; relying on ARCHIVER_BEARER/ARCHIVER_API_KEY env (if set).")
+
     archiver_urls = _parse_archiver_urls(args.archiver_urls)
     if archiver_urls:
         logger.info(f"Archiver endpoints: {', '.join(archiver_urls)}")
-        logger.info("Auth picked from env if set: ARCHIVER_BEARER and/or ARCHIVER_API_KEY")
+        logger.info("Auth picked from env if set: AUTH_TOKEN")
     else:
-        logger.warning("No archiver endpoints configured (use --archiver-urls or ARCHIVER_URLS). Results will only be saved to disk.")
+        logger.warning(
+            "No archiver endpoints configured. Use --archiver-urls or set ARCHIVER_URLS/ARCHIVE_URLS."
+        )
+
 
     logger.info(f"Hosts: {', '.join(args.hosts)}")
     logger.info(f"Tests: {', '.join(args.tests)}")
@@ -311,24 +370,24 @@ def main():
             if args.tool_mode == "auto":
                 # Do not pass --tool at all
                 run_pscheduler_test(
-                    test, None, host, args.output_dir, logger, archiver_urls,
+                    test, None, host, args.output_dir, logger, archiver_urls, auth_token,
                     reverse=False
                 )
                 if args.reverse and test in ["throughput", "latency"]:
                     run_pscheduler_test(
-                        test, None, host, args.output_dir, logger, archiver_urls,
+                        test, None, host, args.output_dir, logger, archiver_urls, auth_token,
                         reverse=True
                     )
 
             elif args.tool_mode == "all":
                 for tool in supported_tools:
                     run_pscheduler_test(
-                        test, tool, host, args.output_dir, logger, archiver_urls,
+                        test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
                         reverse=False
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
-                            test, tool, host, args.output_dir, logger, archiver_urls,
+                            test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
                             reverse=True
                         )
 
@@ -341,12 +400,12 @@ def main():
                     continue
                 for tool in chosen:
                     run_pscheduler_test(
-                        test, tool, host, args.output_dir, logger, archiver_urls,
+                        test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
                         reverse=False
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
-                            test, tool, host, args.output_dir, logger, archiver_urls,
+                            test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
                             reverse=True
                         )
 
