@@ -1,182 +1,200 @@
-# perfsonar-extensions-docker
+# perfSONAR Extensions — Docker
 
-A set of PerfSONAR container extensions designed to automate periodic network performance monitoring tests across a defined set of hosts.
+This directory contains Docker resources to:
 
-## Table of Contents
+* launch a **perfSONAR Testpoint** container,
+* run a **periodic pScheduler runner** inside the container, and
+* **archive results** to a REST service (e.g., `pscheduler-result-archiver`), which you can connect to **Grafana** for visualization (latency, throughput, RTT, MTU, trace).
 
-- [Overview](#overview)
-- [Components](#components)
-  - [perfsonar-testpoint](#perfsonar-testpoint)
-  - [perfsonar-tool](#perfsonar-tool)
-- [Supported Tests](#supported-tests)
-- [Setup](#setup)
-- [Usage](#usage)
-- [Directory Structure](#directory-structure)
-- [Setup Measurement Container](#setup-measurement-container)
+## What’s included
+
+```
+docker/
+├─ Dockerfile-perfsonar-testpoint      # Systemd-based testpoint image (for cron + runner)
+├─ Dockerfile-perfsonar-tool           # Lightweight “direct tools” image (optional)
+├─ docker-compose-testpoint.yml        # Compose stack for the testpoint + periodic runner
+├─ docker-compose-tool.yml             # Compose stack to run tools directly (optional)
+├─ pscheduler_test_runner.py           # Periodic runner (mounted into container)
+├─ run_direct_tools.py                 # One-off tool runner (optional flow)
+├─ entrypoint.sh                       # Helper for the tools image
+├─ compose/
+│  └─ bootstrap_cron.sh               # Installs crontab using CRON_EXPRESSION
+├─ env.template                        # Copy to .env to customize
+└─ scripts/                            # Helper scripts (if any)
+```
+
+## Requirements & notes
+
+* **Linux host** recommended. `network_mode: host` is used in `docker-compose-testpoint.yml`. (Docker Desktop on macOS does not support host networking the same way.)
+* An **archiver endpoint** reachable from the testpoint container (e.g., `http://archiver:8000` or `https://your-host/ps`).
+* Optional **Grafana** can read from your archiver (JSON API or DB, depending on your archiver setup).
 
 ---
 
-## Overview
+## Quick start (testpoint + periodic runner)
 
-This project extends standard PerfSONAR containers to facilitate automated, periodic network testing. It supports various performance tests such as latency, throughput, RTT, MTU discovery, path tracing, and jitter measurements across multiple hosts.
-
----
-
-## Components
-
-### 1. **perfsonar-testpoint**
-
-Builds upon the official [perfsonar-testpoint-docker](https://github.com/perfsonar/perfsonar-testpoint-docker) container with the following enhancements:
-
-- Adds a Python script to automate periodic network tests.
-- Reads target hosts from the `HOSTS` environment variable defined in `docker-compose.yml`.
-- Mounts configuration and log directories for persistence.
-- Uses `systemd` and appropriate `cgroup` settings for test compatibility.
-
-**Launch:**
-```bash
-docker compose up -d perfsonar-testpoint
-docker exec -it perfsonar-testpoint /bin/bash /etc/cron.hourly/bootstrap_cron.sh
-```
-
----
-
-### 2. **perfsonar-tool**
-
-A lightweight container based on `rocky:9` that installs PerfSONAR command-line tools and runs periodic network tests on specified hosts.
-
-**Launch:**
-```bash
-docker compose up -d perfsonar-tool
-```
-
----
-
-## Supported Tests
-
-The following network tests are supported and scheduled periodically:
-
-| Test Type      | Tools Used                                                                |
-|----------------|-------------------------------------------------------------------------|
-| **Latency**    | `owping`, `twping`, `halfping`                                           |
-| **RTT**        | `ping`, `tcpping`, `twping`                                              |
-| **Throughput** | `iperf3`, `nuttcp`, `ethr`                                               |
-| **MTU**        | `fwmtu`                                                                  |
-| **Path Trace** | `traceroute`, `paris-traceroute`, `tracepath`                            |
-| **Jitter**     | Captured using `owping`, `twping`, `iperf3`                              |
-
----
-
-## Setup
-
-### Prerequisites:
-
-- Docker & Docker Compose installed.
-- Necessary network permissions (for `host` mode and required ports).
-  
-### Clone Repository:
-```bash
-git clone https://github.com/your-repo/perfsonar-extensions.git
-cd perfsonar-extensions
-```
-
-### Configure Target Hosts:
-
-Edit `docker-compose.yml` and update:
-```yaml
-environment:
-  - HOSTS=23.134.232.210 23.134.232.242
-```
-Add or remove hosts as needed.
-
-### Configure Test frequency:
-
-Edit `docker-compose.yml` and update:
-```yaml
-environment:
-  - CRON_EXPRESSION=0 */2 * * * # Example: Run every 2 hours
-```
-Change interval as needed.
-
----
-
-## Usage
-
-### Start Services:
-
-```bash
-docker compose up -d <container_name>
-```
-
-### Stop Services:
-
-```bash
-docker compose down
-```
-
-### View Logs:
-
-```bash
-docker logs perfsonar-testpoint
-docker logs perfsonar-tool
-```
-
-Logs and results are stored in the `./data` directory for both services.
-
----
-
-## Directory Structure
-
-```
-├── Dockerfile-perfsonar-testpoint  # Dockerfile for perfsonar-testpoint
-├── Dockerfile-perfsonar-tool       # Dockerfile for perfsonar-tool
-├── docker-compose.yml              # Compose file defining both services
-├── compose/
-│   └── psconfig/                   # Custom psconfig files for testpoint
-├── data_testpoint/                 # Stores logs and test results for testpoint container
-├── data_tools/                     # Stores logs and test results for tool container
-└── README.md
-```
-
-## Setup Measurement Container
-
-### **Instructions for the Ubuntu VM (Student Environment)**
-
-1. **Provision or connect** to the Ubuntu VM onboard the ship.
-
-2. **Clone the repository and install Docker**:
+1. Clone and enter:
 
 ```bash
 git clone https://github.com/kthare10/perfsonar-extensions.git
-cd perfsonar-extensions
-./enable_docker.sh
+cd perfsonar-extensions/docker
 ```
 
-3. **Update the `AUTH_TOKEN`** in the `docker-compose.yml` file under the `environment` section of the `perfsonar-testpoint` service.  
-   We will provide the `AUTH_TOKEN` value.
+2. Configure environment:
+
+```bash
+cp env.template .env
+# Edit .env to set HOSTS, ARCHIVE_URLS, AUTH_TOKEN, CRON_EXPRESSION, etc.
+```
+
+3. Launch:
+
+```bash
+docker compose -f docker-compose-testpoint.yml up -d --build
+docker compose -f docker-compose-testpoint.yml ps
+```
+
+4. Check logs:
+
+```bash
+docker logs -f perfsonar-testpoint
+```
+
+This starts a systemd-style container that bootstraps **cron** and runs `pscheduler_test_runner.py` on your schedule.
+
+---
+
+## Configuration
+
+All key settings are exposed as environment variables in `docker-compose-testpoint.yml`. You can override them in `.env`.
 
 ```yaml
 services:
   perfsonar-testpoint:
-    ...
     environment:
-      - AUTH_TOKEN=<insert_token_here>
+      - HOSTS=${HOSTS:-23.134.232.50@shore-STAR}
+      - AUTH_TOKEN=${AUTH_TOKEN:-changeme}
+      - ARCHIVE_URLS=${ARCHIVE_URLS:-https://localhost:8443/ps}
+      - TZ=${TZ:-UTC}
+      - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */2 * * *}
 ```
 
-4. **Bring up the containers and initialize the scheduler**:
+### Variables
+
+* **`HOSTS`** — one or more destinations. Supports *IP + friendly name*:
+
+  * `ip@name`  (recommended)
+  * `name@ip`, `ip,name`, or `ip|name` also work
+  * plain `host` is allowed (used for both ip and name)
+
+  Examples:
+
+  ```
+  HOSTS='192.0.2.10@nyc-tp 198.51.100.20@lbnl-tp'
+  HOSTS='perfsonar.example.org'
+  HOSTS='[2001:db8::10]@ams-tp'
+  ```
+
+* **`ARCHIVE_URLS`** — one or more archiver base URLs (space or comma separated).
+  Examples:
+
+  ```
+  ARCHIVE_URLS='http://archiver:8000'
+  ARCHIVE_URLS='http://localhost:8000,https://archiver.example.org/ps'
+  ```
+
+* **`AUTH_TOKEN`** — bearer token sent to the archiver(s) if required (your runner also recognizes `AUTH_TOKEN`/`ARCHIVER_BEARER` internally).
+
+* **`CRON_EXPRESSION`** — when to run the tests. Default `0 */2 * * *` = every 2 hours at minute 0.
+  Examples:
+
+  * every hour: `0 * * * *`
+  * every 15 minutes: `*/15 * * * *`
+  * daily at 03:00: `0 3 * * *`
+
+* **`TZ`** — timezone for logs and cron.
+
+### Volumes
+
+```yaml
+volumes:
+  - ./pscheduler_test_runner.py:/usr/src/app/periodic.py
+  - ./compose/bootstrap_cron.sh:/etc/cron.hourly/bootstrap_cron.sh
+  - ./data_testpoint:/data
+  - /sys/fs/cgroup:/sys/fs/cgroup:rw    # required for systemd in container
+```
+
+* Results & logs are written under `./data_testpoint` on the host.
+* `periodic.py` is the mounted runner script invoked by cron.
+
+---
+
+## What the runner does
+
+On each schedule:
+
+1. Executes selected **pScheduler** tests to each entry in `HOSTS`.
+2. Saves raw JSON into `/data` (host-mounted).
+3. **POSTs** result JSON to each URL in `ARCHIVE_URLS` (REST ingest).
+   This is designed for `pscheduler-result-archiver` (or a compatible REST service) that stores results for **Grafana**.
+
+The runner supports categories like **latency**, **throughput**, **RTT**, **MTU**, and **trace**. It also supports the `ip@name` convention so Grafana panels can show human-friendly labels while keeping the destination IP for pScheduler itself.
+
+---
+
+## Optional: “direct tools” flow
+
+If you want a lighter flow to run tools ad-hoc without the systemd/cron stack, use:
 
 ```bash
-docker compose up -d perfsonar-testpoint
-docker exec -it perfsonar-testpoint /bin/bash /etc/cron.hourly/bootstrap_cron.sh
+docker compose -f docker-compose-tool.yml up --build
 ```
 
-> **Note:** This container is configured to automatically run tests every 2 hours and store the results in:  
-> `perfsonar-extensions/data_testpoint`
+The `run_direct_tools.py` script shows examples for invoking individual tools and can be adapted to push results to the same archiver.
 
-5. **At the end of the cruise**, archive and export the test results:
+---
+
+## Verifying end-to-end
+
+* **Testpoint container up**
+  `docker ps | grep perfsonar-testpoint`
+
+* **Cron installed**
+  `docker exec -it perfsonar-testpoint bash -lc 'crontab -l'`
+
+* **Runner logs/results**
+  `ls -ltr data_testpoint/` (JSON files per category)
+  `docker logs perfsonar-testpoint` (runner + cron bootstrap messages)
+
+* **Archiver reachable**
+  `curl -sS http://<archiver-host>:<port>/` (or the `/api/save` or health endpoint your archiver exposes)
+
+* **Grafana**
+  Add a JSON API (or DB) datasource pointing at your archiver and build panels for latency/throughput/RTT/MTU/trace.
+
+---
+
+## Tips & troubleshooting
+
+* **Host networking (Linux)**: `network_mode: host` lets the container use host interfaces for tools like `owping`, `traceroute`, etc.
+* **macOS**: host networking differs; for testing, you can still post to a remote archiver and run many tools, but some low-level networking behaviors differ from Linux.
+* **TLS**: if your archiver is HTTPS with self-signed certs, either trust the CA in the container or configure the runner to skip verification (only for testing).
+* **Reverse tests**: if you enable them in the runner, only certain categories support reverse (e.g., throughput, latency).
+
+---
+
+## Security
+
+* Treat `AUTH_TOKEN` as sensitive; prefer injecting via `.env` or secrets managers.
+* If exposing the archiver publicly, enforce TLS and authentication.
+* Restrict who can schedule tests, especially throughput tests (`iperf3`) that can consume bandwidth.
+
+---
+
+## Updating
 
 ```bash
-tar -zcvf data_testpoint.tgz perfsonar-extensions/data_testpoint
+docker compose -f docker-compose-testpoint.yml pull
+docker compose -f docker-compose-testpoint.yml build --no-cache
+docker compose -f docker-compose-testpoint.yml up -d
 ```
-
-The resulting archive can then be transferred to a student’s laptop or uploaded to a cloud storage location for us to retrieve.
