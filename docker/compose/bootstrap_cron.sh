@@ -10,6 +10,9 @@ SCRIPT_PATH="/usr/src/app/periodic.py"
 LOG_FILE="/data/pscheduler_cron.log"
 PYTHON_BIN=$(which python3)
 
+
+pip install archiver_client==1.0.0b0
+
 # --- Step 2: Reset Cron Entries ---
 echo "Cleaning existing crontab..."
 crontab -r 2>/dev/null
