@@ -77,28 +77,15 @@ configure_docker_ipv6() {
         echo '{}' | sudo tee /etc/docker/daemon.json >/dev/null
     fi
 
-    # Build a stable ULA subnet for Docker based on machine-id: fdxx:xxxx:xxxx::/80
-    mid=$(tr 'A-Z' 'a-z' < /etc/machine-id | tr -d '\n' | sed 's/[^0-9a-f]//g')
-    if [[ -z "$mid" ]]; then
-        mid=$(cat /proc/sys/kernel/random/uuid | tr -d '-' | cut -c1-12)
-    fi
-    seg1=$(echo "$mid" | cut -c1-4)
-    seg2=$(echo "$mid" | cut -c5-8)
-    seg3=$(echo "$mid" | cut -c9-12)
-    FIXED_CIDR_V6="fd${seg1}:${seg2}:${seg3}::/80"
 
     # Default DNS servers (Cloudflare + Google IPv6)
     DEFAULT_DNS='["2606:4700:4700::1111", "2001:4860:4860::8888"]'
 
     # Merge/update daemon.json with jq
     tmpfile=$(mktemp)
-    sudo jq --arg fc6 "$FIXED_CIDR_V6" --argjson dns "$DEFAULT_DNS" '
+    sudo jq --argjson dns "$DEFAULT_DNS" '
         .ipv6 = true
-        | .ip6tables = true
         | .dns = ($dns)
-        | (if has("fixed-cidr-v6") and (.["fixed-cidr-v6"] | type=="string" and .["fixed-cidr-v6"] != "")
-           then .
-           else . + {"fixed-cidr-v6": $fc6} end)
     ' /etc/docker/daemon.json | sudo tee "$tmpfile" >/dev/null
 
     sudo mv "$tmpfile" /etc/docker/daemon.json
@@ -112,7 +99,7 @@ configure_docker_ipv6() {
         sudo service docker restart || true
     fi
 
-    echo "Docker IPv6 configured. fixed-cidr-v6=${FIXED_CIDR_V6}"
+    echo "Docker IPv6 configured."
 }
 
 host_tune() {
