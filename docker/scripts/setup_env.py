@@ -2,7 +2,7 @@
 import argparse
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Tuple
 
@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--archive-urls", default="https://localhost:8443/ps,https://23.134.232.50:8443/ps",
                    help="Value for ARCHIVE_URLS")
     p.add_argument("--tz", default="UTC", dest="tz", help="Value for TZ")
-    p.add_argument("--cron", default="0 */2 * * *", dest="cron", help="Value for CRON_EXPRESSION")
+    p.add_argument("--cron", default="0 */4 * * *", dest="cron", help="Value for CRON_EXPRESSION")
     return p.parse_args()
 
 
@@ -53,7 +53,7 @@ def load_lines(path: Path) -> List[str]:
 def backup_file(path: Path) -> None:
     if not path.exists():
         return
-    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     backup = path.with_suffix(path.suffix + f".bak.{ts}")
     backup.parent.mkdir(parents=True, exist_ok=True)
     backup.write_bytes(path.read_bytes())
