@@ -4,7 +4,7 @@
 CRON_SCHEDULE="${CRON_EXPRESSION:-0 */2 * * *}"
 CRON_SCHEDULE="0 */6 * * *"
 HOSTS="${HOSTS:-localhost}"
-ARCHIVE="${ARCHIVE:-/usr/src/app/config.json}"
+ARCHIVE_URLS="${ARCHIVE_URLS:-/usr/src/app/config.json}"
 URL="${URL:-localhost}"
 SCRIPT_PATH="/usr/src/app/periodic.py"
 LOG_FILE="/data/pscheduler_cron.log"
@@ -17,7 +17,7 @@ crontab -r 2>/dev/null
 # Create the cron file
 mkdir -p /etc/cron.d
 CRON_FILE=/etc/cron.d/pscheduler_cron
-echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS --output-dir /data --archive $ARCHIVE --url $URL >> $LOG_FILE 2>&1" > $CRON_FILE
+echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS --output-dir /data --archiver-urls $ARCHIVE_URLS >> $LOG_FILE 2>&1" > $CRON_FILE
 
 # Apply permissions
 chmod 0644 $CRON_FILE
@@ -27,28 +27,6 @@ crontab $CRON_FILE
 
 # Start cron service in background
 service cron start
-
-# Read env variables or use defaults
-AUTH_TOKEN=${BEARER_TOKEN:-"Basic cGVyZnNvbmFyOjc0V0daZjRvcm9TdGZlUGx1WGVm"}
-ARCHIVER_IP=${HOST_IP:-"127.0.0.1"}
-
-# Write dynamic archiver config
-cat > $ARCHIVE <<EOF
-{
-  "archiver": "http",
-  "data": {
-    "schema": 3,
-    "_url": "https://${ARCHIVER_IP}/logstash",
-    "verify-ssl": false,
-    "op": "put",
-    "_headers": {
-      "x-ps-observer": "{% scheduled_by_address %}",
-      "content-type": "application/json",
-      "Authorization": "${AUTH_TOKEN}"
-    }
-  }
-}
-EOF
 
 # --- (Optional) Step 6: Patch pscheduler limits if root ---
 # Only run if pscheduler limits file exists

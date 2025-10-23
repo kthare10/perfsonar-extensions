@@ -10,11 +10,10 @@ services:
     tty: true
     stdin_open: true
     environment:
-      - HOSTS=${HOSTS:-23.134.232.51}
-      - HOST_IP=${HOST_IP:-23.134.232.51}
+      - HOSTS=${HOSTS:-23.134.232.50}
+      - HOST_IP=${HOST_IP:-23.134.232.50}
       - AUTH_TOKEN=${AUTH_TOKEN:-changeme}  # Change this before deployment
-      - ARCHIVE=${ARCHIVE:-/usr/src/app/config.json}
-      - URL=${URL:-http://23.134.232.51:8000/api/save/}
+      - ARCHIVE_URLS=${ARCHIVE:-https://localhost:8443/api}
       - TZ=${TZ:-UTC}
       - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */2 * * *}
     tmpfs:
@@ -22,7 +21,6 @@ services:
       - /run/lock
       - /tmp
     volumes:
-      - compose/config.json:/usr/src/app/config.json
       - ./pscheduler_test_runner.py:/usr/src/app/periodic.py
       - ./compose/bootstrap_cron.sh:/etc/cron.hourly/bootstrap_cron.sh
       - ./data_testpoint:/data  # Results & logs outside
