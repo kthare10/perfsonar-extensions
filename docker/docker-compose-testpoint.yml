@@ -10,7 +10,7 @@ services:
     tty: true
     stdin_open: true
     environment:
-      - HOSTS=${HOSTS:-23.134.232.50}
+      - HOSTS=${HOSTS:-23.134.232.50@shore-STAR}
       - AUTH_TOKEN=${AUTH_TOKEN:-changeme}  # Change this before deployment
       - ARCHIVE_URLS=${ARCHIVE_URLS:-https://localhost:8443/ps}
       - TZ=${TZ:-UTC}

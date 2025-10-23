@@ -185,36 +185,47 @@ def archive_result_to_endpoints(
 def run_pscheduler_test(
     test: str,
     tool: Optional[str],
-    host: str,
+    host_spec: str,
     output_dir: str,
     logger: logging.Logger,
     archiver_urls: List[str],
     auth_token: str,
     reverse: bool = False,
+    dst_override: Optional[NodeRef] = None,
 ):
+    # Parse dest + friendly name
+    if dst_override is None:
+        dest, dst = _parse_host_spec(host_spec)
+    else:
+        dest, dst = dst_override.ip, dst_override
+
     timestamp_utc = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')
     category_dir = os.path.join(output_dir, test)
     os.makedirs(category_dir, exist_ok=True)
 
     suffix = "reverse" if reverse else "forward"
     tool_tag = tool if tool else "auto"
+
+    # Safer filename using both dest ip/host and friendly name
+    def _safe(s: str) -> str:
+        return s.replace(":", "_").replace("/", "_").replace("@", "_").replace("|", "_").replace(",", "_")
+
     output_file = os.path.join(
         category_dir,
-        f"{host.replace(':', '_')}_{tool_tag}_{timestamp_utc}_{suffix}.json"
+        f"{_safe(dst.name)}@{_safe(dest)}_{tool_tag}_{timestamp_utc}_{suffix}.json"
     )
 
     cmd = build_pscheduler_cmd(
-        test=test, tool=tool, host=host, output_file=output_file, reverse=reverse
+        test=test, tool=tool, host=dest, output_file=output_file, reverse=reverse
     )
 
-    logger.info(f"Running {test} ({'auto' if tool is None else tool}) -> {host} reverse={reverse}")
+    logger.info(f"Running {test} ({'auto' if tool is None else tool}) -> dest={dest} name={dst.name} reverse={reverse}")
     logger.debug(f"Command: {' '.join(cmd)}")
 
     try:
         subprocess.run(cmd, check=True)
-        logger.info(f"Completed {test} ({tool_tag}) to {host}, output: {output_file}")
+        logger.info(f"Completed {test} ({tool_tag}) to {dest} ({dst.name}), output: {output_file}")
 
-        # Load the pscheduler JSON once and ship to all archiver URLs, if any
         if archiver_urls:
             try:
                 with open(output_file, "r") as f:
@@ -224,19 +235,18 @@ def run_pscheduler_test(
                 return
 
             src = _default_src_noderef()
-            dst = _dst_noderef_from_host(host)
             archive_result_to_endpoints(
                 archiver_urls=archiver_urls,
                 category=test,
                 raw_json=raw,
                 src=src,
-                dst=dst,
+                dst=dst,  # <-- keep the explicit NodeRef (ip + name)
                 reverse=reverse,
                 logger=logger,
                 auth_token=auth_token
             )
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error running {test} ({tool_tag}) on {host}: {e}")
+        logger.error(f"Error running {test} ({tool_tag}) on {dest} ({dst.name}): {e}")
 
 
 def _split_urls(raw: str) -> list[str]:
@@ -251,6 +261,41 @@ def _split_urls(raw: str) -> list[str]:
             urls.append(u)
     return urls
 
+def _parse_host_spec(spec: str) -> tuple[str, NodeRef]:
+    """
+    Accept formats:
+      - "host"                      -> ip=host, name=host           (backward compatible)
+      - "ip@name" or "name@ip"      -> auto-detect which is IP
+      - "ip,name" or "name,ip"
+      - "ip|name"  (handy if commas are awkward in shells)
+    Returns: (dest_for_pscheduler, NodeRef(ip=..., name=...))
+    """
+    s = (spec or "").strip()
+
+    def looks_ip(x: str) -> bool:
+        # Very light heuristic; works for IPv4 and IPv6
+        return any(c in x for c in ".:") and len(x) >= 3
+
+    if "@" in s:
+        a, b = s.split("@", 1)
+        if looks_ip(a) and not looks_ip(b):
+            ip, name = a, b
+        elif looks_ip(b) and not looks_ip(a):
+            ip, name = b, a
+        else:
+            # ambiguous; treat left as ip
+            ip, name = a, b
+    elif "," in s:
+        a, b = s.split(",", 1)
+        ip, name = (a, b) if looks_ip(a) else (b, a)
+    elif "|" in s:
+        a, b = s.split("|", 1)
+        ip, name = (a, b) if looks_ip(a) else (b, a)
+    else:
+        ip = name = s
+
+    dest = ip  # pscheduler --dest uses this
+    return dest, NodeRef(ip=ip, name=name)
 
 def _parse_archiver_urls(cli_value: Optional[List[str]]) -> List[str]:
     """
@@ -363,32 +408,32 @@ def main():
     # Prepare subset tool set (if requested)
     subset_tools = set(args.tools or []) if args.tool_mode == "subset" else None
 
-    for host in args.hosts:
+    for host_spec in args.hosts:
+        dest, dst = _parse_host_spec(host_spec)
         for test in args.tests:
             supported_tools = AVAILABLE_TESTS.get(test, [])
 
             if args.tool_mode == "auto":
-                # Do not pass --tool at all
                 run_pscheduler_test(
-                    test, None, host, args.output_dir, logger, archiver_urls, auth_token,
-                    reverse=False
+                    test, None, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                    reverse=False, dst_override=dst
                 )
                 if args.reverse and test in ["throughput", "latency"]:
                     run_pscheduler_test(
-                        test, None, host, args.output_dir, logger, archiver_urls, auth_token,
-                        reverse=True
+                        test, None, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                        reverse=True, dst_override=dst
                     )
 
             elif args.tool_mode == "all":
                 for tool in supported_tools:
                     run_pscheduler_test(
-                        test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
-                        reverse=False
+                        test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                        reverse=False, dst_override=dst
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
-                            test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
-                            reverse=True
+                            test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                            reverse=True, dst_override=dst
                         )
 
             else:  # subset
@@ -400,13 +445,13 @@ def main():
                     continue
                 for tool in chosen:
                     run_pscheduler_test(
-                        test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
-                        reverse=False
+                        test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                        reverse=False, dst_override=dst
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
-                            test, tool, host, args.output_dir, logger, archiver_urls, auth_token,
-                            reverse=True
+                            test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                            reverse=True, dst_override=dst
                         )
 
     logger.info("All tests completed.")

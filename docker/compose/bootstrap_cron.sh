@@ -11,7 +11,7 @@ LOG_FILE="/data/pscheduler_cron.log"
 PYTHON_BIN=$(which python3)
 
 
-pip install archiver_client==1.0.0b0
+pip install archiver_client==1.0.0
 
 # --- Step 2: Reset Cron Entries ---
 echo "Cleaning existing crontab..."
@@ -20,7 +20,7 @@ crontab -r 2>/dev/null
 # Create the cron file
 mkdir -p /etc/cron.d
 CRON_FILE=/etc/cron.d/pscheduler_cron
-echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS --output-dir /data --archiver-urls $ARCHIVE_URLS --auth-token $AUTH_TOKEN >> $LOG_FILE 2>&1" > $CRON_FILE
+echo "$CRON_SCHEDULE $PYTHON_BIN $SCRIPT_PATH --hosts $HOSTS --output-dir /data --archiver-urls $ARCHIVE_URLS --auth-token $AUTH_TOKEN --reverse >> $LOG_FILE 2>&1" > $CRON_FILE
 
 # Apply permissions
 chmod 0644 $CRON_FILE
