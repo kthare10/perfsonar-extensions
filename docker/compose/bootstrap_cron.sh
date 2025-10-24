@@ -2,7 +2,7 @@
 
 # Define cron schedule
 CRON_SCHEDULE="${CRON_EXPRESSION:-0 */4 * * *}"
-CRON_SCHEDULE="0 */4 * * *"
+#CRON_SCHEDULE="0 */4 * * *"
 HOSTS="${HOSTS:-localhost}"
 ARCHIVE_URLS="${ARCHIVE_URLS:-https://localhost:8443/ps}"
 AUTH_TOKEN="${AUTH_TOKEN:-changeme}"
