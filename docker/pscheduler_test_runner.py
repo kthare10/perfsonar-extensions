@@ -181,6 +181,34 @@ def archive_result_to_endpoints(
         except Exception as e:
             logger.exception(f"Unexpected archiver error ({base_url}): {e}")
 
+def run_checked(cmd, *, timeout=None, logger: logging.Logger = None):
+    try:
+        logger.info(f"Running {' '.join(cmd)}")
+        cp = subprocess.run(
+            cmd,
+            check=True,                 # <- raises CalledProcessError on non-zero exit
+            stdout=subprocess.PIPE,     # capture for debugging
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+        if logger:
+            logger.debug(cp.stdout.strip())
+        return True, cp
+    except subprocess.CalledProcessError as e:
+        if logger:
+            logger.error(f"Command failed (exit {e.returncode}): {' '.join(cmd)}")
+            logger.error(e.stderr.strip() or e.stdout.strip())
+        return False, e
+    except subprocess.TimeoutExpired as e:
+        if logger:
+            logger.error(f"Command timed out after {timeout}s: {' '.join(cmd)}")
+            logger.error((e.stderr or "") if hasattr(e, "stderr") else "")
+        return False, e
+    except FileNotFoundError as e:
+        if logger:
+            logger.error(f"Executable not found: {cmd[0]}")
+        return False, e
 
 def run_pscheduler_test(
     test: str,
@@ -223,8 +251,13 @@ def run_pscheduler_test(
     logger.debug(f"Command: {' '.join(cmd)}")
 
     try:
-        subprocess.run(cmd, check=True)
-        logger.info(f"Completed {test} ({tool_tag}) to {dest} ({dst.name}), output: {output_file}")
+        status, exception = run_checked(cmd, logger=logger)
+        #result = subprocess.run(cmd, check=True)
+        if status:
+            logger.info(f"Completed {test} ({tool_tag}) to {dest} ({dst.name}), output: {output_file}")
+        else:
+            logger.error(f"Command failed (exit {status}), exception code: {exception}")
+            return
 
         if archiver_urls:
             try:
@@ -463,7 +496,7 @@ def main():
 
 
 # Optional: keep speedtest helper (unchanged except no archiver flag here)
-def run_speedtest(output_dir, logger, archiver_urls: Optional[List[str]] = None):
+def run_speedtest(output_dir, logger, archiver_urls: Optional[List[str]] = None, auth_token: Optional[str] = None):
     timestamp_utc = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')
     output_file = os.path.join(output_dir, f"speedtest_{timestamp_utc}.json")
 
@@ -497,6 +530,7 @@ def run_speedtest(output_dir, logger, archiver_urls: Optional[List[str]] = None)
                 dst=dst,
                 reverse=False,
                 logger=logger,
+                auth_token=auth_token
             )
 
     except subprocess.CalledProcessError as e:
