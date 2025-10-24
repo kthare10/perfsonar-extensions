@@ -423,12 +423,7 @@ def main():
                     test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
                     reverse=False, dst_override=dst
                 )
-                if args.reverse and test in ["throughput", "latency"]:
-                    tool = None
-                    if test == "throughput":
-                        tool = "iperf3"
-                    elif test == "latency":
-                        tool = "halfping"
+                if args.reverse and test in ["throughput", "latency"] and (tool is None or tool not in ["halfping"]):
                     run_pscheduler_test(
                         test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
                         reverse=True, dst_override=dst
