@@ -414,13 +414,23 @@ def main():
             supported_tools = AVAILABLE_TESTS.get(test, [])
 
             if args.tool_mode == "auto":
+                tool = None
+                if test == "throughput":
+                    tool = "iperf3"
+                elif test == "latency":
+                    tool = "halfping"
                 run_pscheduler_test(
-                    test, None, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                    test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
                     reverse=False, dst_override=dst
                 )
                 if args.reverse and test in ["throughput", "latency"]:
+                    tool = None
+                    if test == "throughput":
+                        tool = "iperf3"
+                    elif test == "latency":
+                        tool = "halfping"
                     run_pscheduler_test(
-                        test, None, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                        test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
                         reverse=True, dst_override=dst
                     )
 
