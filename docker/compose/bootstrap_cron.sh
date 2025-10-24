@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define cron schedule
-CRON_SCHEDULE="${CRON_EXPRESSION:-0 */2 * * *}"
-CRON_SCHEDULE="0 */6 * * *"
+CRON_SCHEDULE="${CRON_EXPRESSION:-0 */4 * * *}"
+CRON_SCHEDULE="0 */4 * * *"
 HOSTS="${HOSTS:-localhost}"
 ARCHIVE_URLS="${ARCHIVE_URLS:-https://localhost:8443/ps}"
 AUTH_TOKEN="${AUTH_TOKEN:-changeme}"
