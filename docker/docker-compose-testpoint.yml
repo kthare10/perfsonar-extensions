@@ -27,9 +27,9 @@ services:
     mem_limit: 4g
     cpus: 4
     healthcheck:
-      test: ["CMD-SHELL", "pgrep cron || pgrep crond"]
+      test: ["CMD-SHELL", "curl -sf https://localhost/pscheduler -k || pscheduler ping"]
       interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     restart: unless-stopped

@@ -16,12 +16,29 @@ RUN curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/scr
     rm -rf /var/lib/apt/lists/*
 
 # Create app directory
-RUN mkdir -p /usr/src/app
+RUN mkdir -p /usr/src/app /data
 WORKDIR /usr/src/app
 
 # Copy scripts
 COPY pscheduler_test_runner.py /usr/src/app/periodic.py
-COPY entrypoint-testpoint.sh /usr/src/app/entrypoint-testpoint.sh
-RUN chmod +x /usr/src/app/entrypoint-testpoint.sh
+COPY entrypoint-testpoint.sh /usr/src/app/perfsonar-setup.sh
+RUN chmod +x /usr/src/app/perfsonar-setup.sh
 
-ENTRYPOINT ["/usr/src/app/entrypoint-testpoint.sh"]
+# Register as a systemd oneshot service that runs after pscheduler is up
+# PassEnvironment passes Docker env vars from PID 1 (systemd) into this service
+RUN printf '[Unit]\n\
+Description=perfSONAR testpoint cron and limits setup\n\
+After=pscheduler-scheduler.service pscheduler-runner.service\n\
+Requires=pscheduler-scheduler.service pscheduler-runner.service\n\
+\n\
+[Service]\n\
+Type=oneshot\n\
+ExecStart=/usr/src/app/perfsonar-setup.sh\n\
+RemainAfterExit=yes\n\
+PassEnvironment=HOSTS AUTH_TOKEN ARCHIVE_URLS CRON_EXPRESSION TZ\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n' > /etc/systemd/system/perfsonar-testpoint-setup.service && \
+    systemctl enable perfsonar-testpoint-setup.service
+
+# Keep systemd as PID 1 (inherited from base image CMD=/lib/systemd/systemd)

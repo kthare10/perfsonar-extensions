@@ -69,6 +69,9 @@ if [ -f "$LIMITS_FILE" ]; then
       mv "$TMP_LIMITS" "$LIMITS_FILE"
       chmod 0644 "$LIMITS_FILE"
       echo "Updated throughput duration limit to 300s."
+      # Restart pscheduler services to pick up new limits
+      systemctl restart pscheduler-scheduler 2>/dev/null || true
+      systemctl restart pscheduler-runner 2>/dev/null || true
     else
       echo "WARNING: Modified limits.conf is not valid JSON. Skipping patch."
       rm -f "$TMP_LIMITS"
@@ -76,10 +79,6 @@ if [ -f "$LIMITS_FILE" ]; then
   else
     echo "WARNING: $LIMITS_FILE is not valid JSON. Skipping patch."
   fi
-
-  # Restart pscheduler services
-  systemctl restart pscheduler-scheduler 2>/dev/null || service pscheduler-scheduler restart 2>/dev/null || true
-  systemctl restart pscheduler-runner 2>/dev/null || service pscheduler-runner restart 2>/dev/null || true
 else
   echo "limits.conf not found at $LIMITS_FILE. Skipping patch."
 fi
@@ -87,17 +86,4 @@ fi
 # --- Start cron service ---
 service cron start
 
-# --- Graceful shutdown on SIGTERM ---
-cleanup() {
-  echo "Received SIGTERM, shutting down..."
-  service cron stop 2>/dev/null || true
-  exit 0
-}
-trap cleanup SIGTERM SIGINT
-
-# Keep container running (systemd-based image handles PID 1)
-# Wait indefinitely, forwarding signals
-while true; do
-  sleep 3600 &
-  wait $! || true
-done
+echo "perfSONAR testpoint setup complete."
