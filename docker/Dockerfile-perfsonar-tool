@@ -2,16 +2,19 @@ FROM rockylinux:9
 
 LABEL maintainer="komal.thareja@gmail.com"
 
-# Install EPEL and perfSONAR tools
-RUN dnf -y install epel-release && dnf clean all
+# Install EPEL, perfSONAR tools, Python 3.11, pip, cronie, procps in consolidated layers
+RUN dnf -y install epel-release && \
+    dnf clean all
+
 RUN curl -s https://downloads.perfsonar.net/install | sh -s - tools
 
-# Install Python 3.11, pip, cronie
-RUN dnf -y install python3.11 python3.11-pip cronie && \
+RUN dnf -y install python3.11 python3.11-pip cronie procps-ng && \
     alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
     alternatives --install /usr/bin/pip pip /usr/bin/pip3.11 1 && \
-    procps && \
     dnf clean all
+
+# Install archiver client
+RUN pip install --no-cache-dir archiver_client==1.0.0
 
 # Create app directory
 RUN mkdir -p /usr/src/app
@@ -24,4 +27,3 @@ RUN chmod +x /usr/src/app/entrypoint.sh
 
 # Set entrypoint
 ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
-

@@ -2,5 +2,26 @@ FROM perfsonar/testpoint:systemd
 
 LABEL maintainer="komal.thareja@gmail.com"
 
-# Install cron
-RUN apt update && apt install -y cron python3-pip
+# Install cron, pip, and clean apt cache
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends cron python3-pip jq && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install archiver client
+RUN pip install --no-cache-dir archiver_client==1.0.0
+
+# Install Ookla Speedtest CLI
+RUN curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | bash && \
+    apt-get install -y --no-install-recommends speedtest && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+RUN mkdir -p /usr/src/app
+WORKDIR /usr/src/app
+
+# Copy scripts
+COPY pscheduler_test_runner.py /usr/src/app/periodic.py
+COPY entrypoint-testpoint.sh /usr/src/app/entrypoint-testpoint.sh
+RUN chmod +x /usr/src/app/entrypoint-testpoint.sh
+
+ENTRYPOINT ["/usr/src/app/entrypoint-testpoint.sh"]

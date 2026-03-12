@@ -10,15 +10,16 @@ This directory contains Docker resources to:
 
 ```
 docker/
-├─ Dockerfile-perfsonar-testpoint      # Systemd-based testpoint image (for cron + runner)
-├─ Dockerfile-perfsonar-tool           # Lightweight “direct tools” image (optional)
+├─ Dockerfile-perfsonar-testpoint      # Systemd-based testpoint image (packages baked in)
+├─ Dockerfile-perfsonar-tool           # Lightweight "direct tools" image (optional)
 ├─ docker-compose-testpoint.yml        # Compose stack for the testpoint + periodic runner
 ├─ docker-compose-tool.yml             # Compose stack to run tools directly (optional)
 ├─ pscheduler_test_runner.py           # Periodic runner (mounted into container)
 ├─ run_direct_tools.py                 # One-off tool runner (optional flow)
-├─ entrypoint.sh                       # Helper for the tools image
+├─ entrypoint-testpoint.sh             # Entrypoint for the testpoint image (cron setup, limits patch)
+├─ entrypoint.sh                       # Entrypoint for the tools image
 ├─ compose/
-│  └─ bootstrap_cron.sh               # Installs crontab using CRON_EXPRESSION
+│  └─ psconfig/                        # perfSONAR psconfig files
 ├─ env.template                        # Copy to .env to customize
 └─ scripts/                            # Helper scripts (if any)
 ```
@@ -60,7 +61,7 @@ docker compose -f docker-compose-testpoint.yml ps
 docker logs -f perfsonar-testpoint
 ```
 
-This starts a systemd-style container that bootstraps **cron** and runs `pscheduler_test_runner.py` on your schedule.
+This starts a systemd-style container with all dependencies pre-installed. The entrypoint sets up **cron** from `CRON_EXPRESSION` and runs `pscheduler_test_runner.py` on your schedule.
 
 ---
 
@@ -106,6 +107,7 @@ services:
 * **`AUTH_TOKEN`** — bearer token sent to the archiver(s) if required (your runner also recognizes `AUTH_TOKEN`/`ARCHIVER_BEARER` internally).
 
 * **`CRON_EXPRESSION`** — when to run the tests. Default `0 */2 * * *` = every 2 hours at minute 0.
+  To change test frequency, edit `.env` and run `docker compose restart` — no rebuild needed.
   Examples:
 
   * every hour: `0 * * * *`
@@ -119,13 +121,17 @@ services:
 ```yaml
 volumes:
   - ./pscheduler_test_runner.py:/usr/src/app/periodic.py
-  - ./compose/bootstrap_cron.sh:/etc/cron.hourly/bootstrap_cron.sh
   - ./data_testpoint:/data
-  - /sys/fs/cgroup:/sys/fs/cgroup:rw    # required for systemd in container
+  - /sys/fs/cgroup:/sys/fs/cgroup:ro    # required for systemd in container
+  - ./compose/psconfig:/etc/perfsonar/psconfig
 ```
 
 * Results & logs are written under `./data_testpoint` on the host.
 * `periodic.py` is the mounted runner script invoked by cron.
+
+### Resource limits & health checks
+
+The compose files include resource limits (`mem_limit: 4g`, `cpus: 4`) and a health check that monitors the cron process. Adjust these in the compose file if your host has different capacity.
 
 ---
 

@@ -11,18 +11,25 @@ services:
     stdin_open: true
     environment:
       - HOSTS=${HOSTS:-23.134.232.50@shore-STAR}
-      - AUTH_TOKEN=${AUTH_TOKEN:-changeme}  # Change this before deployment
+      - AUTH_TOKEN=${AUTH_TOKEN:-changeme}
       - ARCHIVE_URLS=${ARCHIVE_URLS:-https://localhost:8443/ps}
       - TZ=${TZ:-UTC}
       - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */2 * * *}
     tmpfs:
-      - /run
-      - /run/lock
-      - /tmp
+      - /run:size=256m
+      - /run/lock:size=16m
+      - /tmp:size=512m
     volumes:
       - ./pscheduler_test_runner.py:/usr/src/app/periodic.py
-      - ./compose/bootstrap_cron.sh:/etc/cron.hourly/bootstrap_cron.sh
-      - ./data_testpoint:/data  # Results & logs outside
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./data_testpoint:/data
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - ./compose/psconfig:/etc/perfsonar/psconfig
-    restart: always
+    mem_limit: 4g
+    cpus: 4
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep cron || pgrep crond"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped

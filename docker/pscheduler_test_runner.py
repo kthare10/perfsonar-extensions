@@ -143,36 +143,43 @@ def _resolve_auth_token(cli_token: Optional[str]) -> Optional[str]:
     tok = (cli_token or os.environ.get("AUTH_TOKEN") or os.environ.get("ARCHIVER_BEARER") or "").strip()
     return tok or None
 
+def _build_archiver_clients(archiver_urls: List[str], auth_token: str) -> dict:
+    """
+    Create one ArchiverClient per URL for connection reuse across the run.
+    Returns a dict mapping base_url -> ArchiverClient.
+    """
+    clients = {}
+    for url in archiver_urls:
+        clients[url] = ArchiverClient(base_url=url, bearer_token=auth_token, verify=False)
+    return clients
+
+
 def archive_result_to_endpoints(
-    archiver_urls: List[str],
+    archiver_clients: dict,
     category: str,
     raw_json: dict,
     src: NodeRef,
     dst: NodeRef,
     reverse: bool,
     logger: logging.Logger,
-    auth_token: str
 ) -> None:
     """
-    Sends the raw pscheduler JSON to each archiver base URL using the matching endpoint.
-    Uses environment vars ARCHIVER_BEARER / ARCHIVER_API_KEY if present for auth.
+    Sends the raw pscheduler JSON to each archiver using pre-built clients.
     """
     direction = "reverse" if reverse else "forward"
     req = MeasurementRequest(
         src=src,
         dst=dst,
-        direction=direction,  # server uses this to label plots
+        direction=direction,
         raw=raw_json,
-        # ts and run_id are optional; server may set defaults/derive run_id
     )
 
     method_name = _category_to_method_name(category)
 
-    for base_url in archiver_urls:
-        client = ArchiverClient(base_url=base_url, bearer_token=auth_token, verify=False)  # auth picked up from env if set
+    for base_url, client in archiver_clients.items():
         try:
             method = getattr(client, method_name)
-            resp = method(req, upsert=True)  # keep upsert defaulting to True
+            resp = method(req, upsert=True)
             logger.info(f"Archived to {base_url} [{category}] OK: {resp if resp else 'no-content'}")
         except ArchiverHTTPError as e:
             logger.error(f"Archiver HTTP error ({base_url}): {e.status} {e.payload}")
@@ -216,8 +223,7 @@ def run_pscheduler_test(
     host_spec: str,
     output_dir: str,
     logger: logging.Logger,
-    archiver_urls: List[str],
-    auth_token: str,
+    archiver_clients: dict,
     reverse: bool = False,
     dst_override: Optional[NodeRef] = None,
 ):
@@ -259,7 +265,7 @@ def run_pscheduler_test(
             logger.error(f"Command failed (exit {status}), exception code: {exception}")
             return
 
-        if archiver_urls:
+        if archiver_clients:
             try:
                 with open(output_file, "r") as f:
                     raw = json.load(f)
@@ -269,14 +275,13 @@ def run_pscheduler_test(
 
             src = _default_src_noderef()
             archive_result_to_endpoints(
-                archiver_urls=archiver_urls,
+                archiver_clients=archiver_clients,
                 category=test,
                 raw_json=raw,
                 src=src,
-                dst=dst,  # <-- keep the explicit NodeRef (ip + name)
+                dst=dst,
                 reverse=reverse,
                 logger=logger,
-                auth_token=auth_token
             )
     except subprocess.CalledProcessError as e:
         logger.error(f"Error running {test} ({tool_tag}) on {dest} ({dst.name}): {e}")
@@ -433,6 +438,9 @@ def main():
             "No archiver endpoints configured. Use --archiver-urls or set ARCHIVER_URLS/ARCHIVE_URLS."
         )
 
+    # Build archiver clients once for connection reuse across all tests
+    archiver_clients = _build_archiver_clients(archiver_urls, auth_token) if archiver_urls else {}
+
 
     logger.info(f"Hosts: {', '.join(args.hosts)}")
     logger.info(f"Tests: {', '.join(args.tests)}")
@@ -453,24 +461,24 @@ def main():
                 elif test == "latency":
                     tool = "halfping"
                 run_pscheduler_test(
-                    test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                    test, tool, host_spec, args.output_dir, logger, archiver_clients,
                     reverse=False, dst_override=dst
                 )
                 if args.reverse and test in ["throughput", "latency"] and (tool is None or tool not in ["halfping"]):
                     run_pscheduler_test(
-                        test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                        test, tool, host_spec, args.output_dir, logger, archiver_clients,
                         reverse=True, dst_override=dst
                     )
 
             elif args.tool_mode == "all":
                 for tool in supported_tools:
                     run_pscheduler_test(
-                        test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                        test, tool, host_spec, args.output_dir, logger, archiver_clients,
                         reverse=False, dst_override=dst
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
-                            test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                            test, tool, host_spec, args.output_dir, logger, archiver_clients,
                             reverse=True, dst_override=dst
                         )
 
@@ -483,12 +491,12 @@ def main():
                     continue
                 for tool in chosen:
                     run_pscheduler_test(
-                        test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                        test, tool, host_spec, args.output_dir, logger, archiver_clients,
                         reverse=False, dst_override=dst
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
-                            test, tool, host_spec, args.output_dir, logger, archiver_urls, auth_token,
+                            test, tool, host_spec, args.output_dir, logger, archiver_clients,
                             reverse=True, dst_override=dst
                         )
 
@@ -496,7 +504,7 @@ def main():
 
 
 # Optional: keep speedtest helper (unchanged except no archiver flag here)
-def run_speedtest(output_dir, logger, archiver_urls: Optional[List[str]] = None, auth_token: Optional[str] = None):
+def run_speedtest(output_dir, logger, archiver_clients: Optional[dict] = None):
     timestamp_utc = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')
     output_file = os.path.join(output_dir, f"speedtest_{timestamp_utc}.json")
 
@@ -513,24 +521,22 @@ def run_speedtest(output_dir, logger, archiver_urls: Optional[List[str]] = None,
 
         logger.info(f"Speedtest completed. Results saved to: {output_file}")
 
-        if archiver_urls:
+        if archiver_clients:
             try:
                 raw = json.loads(result.stdout)
             except Exception as e:
                 logger.error(f"Could not parse speedtest JSON: {e}")
                 return
             src = _default_src_noderef()
-            # speedtest isn't strictly src->dst pair, but we can name the remote as 'speedtest'
             dst = NodeRef(ip="speedtest", name="speedtest")
             archive_result_to_endpoints(
-                archiver_urls=archiver_urls,
-                category="throughput",  # or a dedicated 'speedtest' route if you add one later
+                archiver_clients=archiver_clients,
+                category="throughput",
                 raw_json=raw,
                 src=src,
                 dst=dst,
                 reverse=False,
                 logger=logger,
-                auth_token=auth_token
             )
 
     except subprocess.CalledProcessError as e:
