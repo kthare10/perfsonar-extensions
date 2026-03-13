@@ -9,6 +9,8 @@ import logging
 from typing import List, Optional
 
 
+import netifaces
+
 from archiver_client.archiver_client import ArchiverClient, NodeRef, MeasurementRequest, ArchiverError, ArchiverHTTPError
 
 # Available tests categorized by logical category -> supported tools
@@ -68,7 +70,7 @@ def setup_logger(output_dir):
     return logger
 
 
-def build_pscheduler_cmd(*, test, tool, host, output_file, reverse):
+def build_pscheduler_cmd(*, test, tool, host, output_file, reverse, source=None):
     """
     Build a pscheduler command. If tool is None, do NOT include '--tool'
     so that pscheduler chooses automatically.
@@ -80,6 +82,9 @@ def build_pscheduler_cmd(*, test, tool, host, output_file, reverse):
         base += ["--tool", tool]
 
     base += ["--format", "json", "--output", output_file, test, "--dest", host]
+
+    if source:
+        base += ["--source", source]
 
     # Category-level extra args
     extra_args = CUSTOM_TEST_ARGS.get(test, [])
@@ -99,6 +104,48 @@ def build_pscheduler_cmd(*, test, tool, host, output_file, reverse):
 
 def _coalesce(val: Optional[str], fallback: str) -> str:
     return val if val else fallback
+
+
+def _resolve_source(hint: Optional[str], logger: Optional[logging.Logger] = None) -> Optional[str]:
+    """
+    Resolve a source hint to an IP address.
+
+    If *hint* looks like an IP address (contains '.' or ':'), return it as-is.
+    Otherwise treat it as a network interface name and look up its first IPv4
+    (preferred) or IPv6 address via netifaces.  Returns None on failure.
+    """
+    if hint is None:
+        return None
+
+    hint = hint.strip()
+    if not hint:
+        return None
+
+    # Quick heuristic: already an IP?
+    if any(c in hint for c in ".:") and len(hint) >= 3:
+        return hint
+
+    # Treat as interface name — resolve to IP
+    try:
+        addrs = netifaces.ifaddresses(hint)
+    except ValueError:
+        if logger:
+            logger.error(f"Interface '{hint}' not found on this host")
+        return None
+
+    # Prefer IPv4, fall back to IPv6
+    for family in (netifaces.AF_INET, netifaces.AF_INET6):
+        addr_list = addrs.get(family, [])
+        for entry in addr_list:
+            ip = entry.get("addr", "")
+            if ip and not ip.startswith("fe80"):  # skip link-local
+                if logger:
+                    logger.info(f"Resolved interface '{hint}' -> {ip}")
+                return ip
+
+    if logger:
+        logger.error(f"Interface '{hint}' has no usable IPv4/IPv6 address")
+    return None
 
 
 def _default_src_noderef() -> NodeRef:
@@ -226,10 +273,11 @@ def run_pscheduler_test(
     archiver_clients: dict,
     reverse: bool = False,
     dst_override: Optional[NodeRef] = None,
+    source: Optional[str] = None,
 ):
     # Parse dest + friendly name
     if dst_override is None:
-        dest, dst = _parse_host_spec(host_spec)
+        dest, dst, _ = _parse_host_spec(host_spec)
     else:
         dest, dst = dst_override.ip, dst_override
 
@@ -250,10 +298,10 @@ def run_pscheduler_test(
     )
 
     cmd = build_pscheduler_cmd(
-        test=test, tool=tool, host=dest, output_file=output_file, reverse=reverse
+        test=test, tool=tool, host=dest, output_file=output_file, reverse=reverse, source=source
     )
 
-    logger.info(f"Running {test} ({'auto' if tool is None else tool}) -> dest={dest} name={dst.name} reverse={reverse}")
+    logger.info(f"Running {test} ({'auto' if tool is None else tool}) -> dest={dest} name={dst.name}{' source=' + source if source else ''} reverse={reverse}")
     logger.debug(f"Command: {' '.join(cmd)}")
 
     try:
@@ -273,7 +321,11 @@ def run_pscheduler_test(
                 logger.error(f"Could not read output JSON ({output_file}): {e}")
                 return
 
-            src = _default_src_noderef()
+            if source:
+                # Use explicit source IP for the src NodeRef (multi-network path)
+                src = NodeRef(ip=source, name=_default_src_noderef().name)
+            else:
+                src = _default_src_noderef()
             archive_result_to_endpoints(
                 archiver_clients=archiver_clients,
                 category=test,
@@ -299,16 +351,31 @@ def _split_urls(raw: str) -> list[str]:
             urls.append(u)
     return urls
 
-def _parse_host_spec(spec: str) -> tuple[str, NodeRef]:
+def _parse_host_spec(spec: str) -> tuple[str, NodeRef, Optional[str]]:
     """
     Accept formats:
       - "host"                      -> ip=host, name=host           (backward compatible)
       - "ip@name" or "name@ip"      -> auto-detect which is IP
       - "ip,name" or "name,ip"
       - "ip|name"  (handy if commas are awkward in shells)
-    Returns: (dest_for_pscheduler, NodeRef(ip=..., name=...))
+
+    Optional source suffix (for multi-NIC / multi-network binding):
+      - "dst_ip@name%src_ip"        -> binds pscheduler --source to src_ip
+      - "dst_ip@name%iface"         -> resolve iface's IP at runtime, bind --source
+      - "dst_ip@name"               -> no source binding (backward compatible)
+
+    The value after '%' can be an IP address or a network interface name (e.g. eth1).
+    Use _resolve_source() to convert interface names to IPs before passing to pscheduler.
+
+    Returns: (dest_for_pscheduler, NodeRef(ip=..., name=...), source_hint_or_None)
     """
     s = (spec or "").strip()
+
+    # Split off optional source IP (everything after '%')
+    source_ip: Optional[str] = None
+    if "%" in s:
+        s, source_ip = s.rsplit("%", 1)
+        source_ip = source_ip.strip() or None
 
     def looks_ip(x: str) -> bool:
         # Very light heuristic; works for IPv4 and IPv6
@@ -333,7 +400,7 @@ def _parse_host_spec(spec: str) -> tuple[str, NodeRef]:
         ip = name = s
 
     dest = ip  # pscheduler --dest uses this
-    return dest, NodeRef(ip=ip, name=name)
+    return dest, NodeRef(ip=ip, name=name), source_ip
 
 def _parse_archiver_urls(cli_value: Optional[List[str]]) -> List[str]:
     """
@@ -450,7 +517,12 @@ def main():
     subset_tools = set(args.tools or []) if args.tool_mode == "subset" else None
 
     for host_spec in args.hosts:
-        dest, dst = _parse_host_spec(host_spec)
+        dest, dst, source_hint = _parse_host_spec(host_spec)
+        source = _resolve_source(source_hint, logger) if source_hint else None
+        if source_hint and source is None:
+            logger.warning(f"Host {host_spec}: could not resolve source '{source_hint}'; proceeding without --source")
+        elif source:
+            logger.info(f"Host {host_spec}: source binding -> {source}")
         for test in args.tests:
             supported_tools = AVAILABLE_TESTS.get(test, [])
 
@@ -462,24 +534,24 @@ def main():
                     tool = "halfping"
                 run_pscheduler_test(
                     test, tool, host_spec, args.output_dir, logger, archiver_clients,
-                    reverse=False, dst_override=dst
+                    reverse=False, dst_override=dst, source=source
                 )
                 if args.reverse and test in ["throughput", "latency"] and (tool is None or tool not in ["halfping"]):
                     run_pscheduler_test(
                         test, tool, host_spec, args.output_dir, logger, archiver_clients,
-                        reverse=True, dst_override=dst
+                        reverse=True, dst_override=dst, source=source
                     )
 
             elif args.tool_mode == "all":
                 for tool in supported_tools:
                     run_pscheduler_test(
                         test, tool, host_spec, args.output_dir, logger, archiver_clients,
-                        reverse=False, dst_override=dst
+                        reverse=False, dst_override=dst, source=source
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
                             test, tool, host_spec, args.output_dir, logger, archiver_clients,
-                            reverse=True, dst_override=dst
+                            reverse=True, dst_override=dst, source=source
                         )
 
             else:  # subset
@@ -492,12 +564,12 @@ def main():
                 for tool in chosen:
                     run_pscheduler_test(
                         test, tool, host_spec, args.output_dir, logger, archiver_clients,
-                        reverse=False, dst_override=dst
+                        reverse=False, dst_override=dst, source=source
                     )
                     if args.reverse and test in ["throughput", "latency"] and tool not in ["halfping"]:
                         run_pscheduler_test(
                             test, tool, host_spec, args.output_dir, logger, archiver_clients,
-                            reverse=True, dst_override=dst
+                            reverse=True, dst_override=dst, source=source
                         )
 
     logger.info("All tests completed.")

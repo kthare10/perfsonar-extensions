@@ -7,8 +7,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends cron python3-pip jq && \
     rm -rf /var/lib/apt/lists/*
 
-# Install archiver client
-RUN pip install --no-cache-dir archiver_client==1.0.0
+# Install archiver client and netifaces (for resolving interface names to IPs)
+RUN pip install --no-cache-dir archiver_client==1.0.0 netifaces
 
 # Install Ookla Speedtest CLI
 RUN curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | bash && \
