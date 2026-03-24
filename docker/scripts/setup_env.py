@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--archive-urls", default="https://localhost:8443/ps,https://23.134.232.50:8443/ps",
                    help="Value for ARCHIVE_URLS")
     p.add_argument("--tz", default="UTC", dest="tz", help="Value for TZ")
-    p.add_argument("--cron", default="0 */4 * * *", dest="cron", help="Value for CRON_EXPRESSION")
+    p.add_argument("--cron", default="0 */6 * * *", dest="cron", help="Value for CRON_EXPRESSION")
     return p.parse_args()
 
 

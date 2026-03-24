@@ -15,7 +15,7 @@ services:
       - AUTH_TOKEN=${AUTH_TOKEN:-changeme}
       - ARCHIVE_URLS=${ARCHIVE_URLS:-https://localhost:8443/ps}
       - TZ=${TZ:-UTC}
-      - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */2 * * *}
+      - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */6 * * *}
     tmpfs:
       - /run:size=256m
       - /run/lock:size=16m

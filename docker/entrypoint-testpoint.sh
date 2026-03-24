@@ -8,7 +8,7 @@ if [ -z "${HOSTS:-}" ]; then
 fi
 
 # --- Read configuration from environment ---
-CRON_EXPRESSION="${CRON_EXPRESSION:-0 */4 * * *}"
+CRON_EXPRESSION="${CRON_EXPRESSION:-0 */6 * * *}"
 ARCHIVE_URLS="${ARCHIVE_URLS:-}"
 AUTH_TOKEN="${AUTH_TOKEN:-}"
 SCRIPT_PATH="/usr/src/app/periodic.py"

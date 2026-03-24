@@ -65,7 +65,7 @@ This:
 Run on the **ship node** with `--remote` and optionally control the interval:
 
 ```bash
-./perfsonar_setup.sh ship-LOSA 23.134.233.34 shore-STAR 23.134.232.50 --remote 23.134.232.50 --interval 2H
+./perfsonar_setup.sh ship-LOSA 23.134.233.34 shore-STAR 23.134.232.50 --remote 23.134.232.50 --interval 6H
 ```
 
 This:
@@ -74,7 +74,7 @@ This:
 * Installs perfSONAR
 * Allows Logstash access
 * Builds psconfig with `--remote 23.134.232.50` so results are archived to the central node
-* Configures tests to run every 2 hours
+* Configures tests to run every 6 hours
 * Validates, publishes, and registers the local psconfig
 
 ---
@@ -198,7 +198,7 @@ zcat cruise_last10d.ndjson.gz \
 2. **Run on the Ship/Remote Node(s):**
 
    ```bash
-   ./perfsonar_setup.sh ship-LOSA 23.134.233.34 shore-STAR 23.134.232.50 --remote 23.134.232.50 --interval 4H
+   ./perfsonar_setup.sh ship-LOSA 23.134.233.34 shore-STAR 23.134.232.50 --remote 23.134.232.50 --interval 6H
    ```
 
 3. **End of Cruise — Offload Data (on Shore Node):**

@@ -77,7 +77,7 @@ services:
       - AUTH_TOKEN=${AUTH_TOKEN:-changeme}
       - ARCHIVE_URLS=${ARCHIVE_URLS:-https://localhost:8443/ps}
       - TZ=${TZ:-UTC}
-      - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */2 * * *}
+      - CRON_EXPRESSION=${CRON_EXPRESSION:-0 */6 * * *}
 ```
 
 ### Variables
@@ -106,7 +106,7 @@ services:
 
 * **`AUTH_TOKEN`** — bearer token sent to the archiver(s) if required (your runner also recognizes `AUTH_TOKEN`/`ARCHIVER_BEARER` internally).
 
-* **`CRON_EXPRESSION`** — when to run the tests. Default `0 */2 * * *` = every 2 hours at minute 0.
+* **`CRON_EXPRESSION`** — when to run the tests. Default `0 */6 * * *` = every 6 hours at minute 0.
   To change test frequency, edit `.env` and run `docker compose restart` — no rebuild needed.
   Examples:
 
