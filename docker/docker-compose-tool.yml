@@ -10,7 +10,7 @@ services:
     environment:
       - "HOSTS=23.134.232.210 23.134.232.242"
       - TZ=UTC
-      - "INTERVAL=0 */2 * * *"
+      - "INTERVAL=0 */6 * * *"
     volumes:
       - ./data_tools:/data
     mem_limit: 4g

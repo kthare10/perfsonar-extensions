@@ -3,7 +3,7 @@ set -euo pipefail
 
 # --- Validate required environment ---
 HOSTS="${HOSTS:-}"
-INTERVAL="${INTERVAL:-0 */2 * * *}"
+INTERVAL="${INTERVAL:-0 */6 * * *}"
 
 if [ -z "$HOSTS" ]; then
   echo "ERROR: No hosts provided via HOSTS env variable. Exiting."
