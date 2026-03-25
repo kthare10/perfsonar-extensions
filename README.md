@@ -6,11 +6,14 @@ Automation and reference artifacts for deploying perfSONAR either with container
 
 ## Choose your setup
 
-- **Docker-based setup** – Run perfSONAR components in containers with Compose.  
+- **Docker-based setup** – Run perfSONAR components in containers with Compose.
   See: [docker/README.md](docker/README.md)
 
-- **Native setup** – Install perfSONAR directly on a VM/host.  
+- **Native setup** – Install perfSONAR directly on a VM/host.
   See: [native/README.md](native/README.md)
+
+- **NMEA listener** *(optional)* – Capture NMEA 0183 navigation data (GPS, heading, motion) from research vessel broadcasts and archive it alongside perfSONAR results for correlation.
+  See: [nmea-listener/README.md](nmea-listener/README.md)
 
 ---
 
@@ -26,15 +29,22 @@ cd docker
 # Native deployment
 cd native
 # follow native/README.md
-````
+
+# NMEA listener (vessel deployments only)
+cd nmea-listener
+# follow nmea-listener/README.md
+```
 
 ---
 
-## What’s in this repo
+## What's in this repo
 
-* `docker/` – Containerized deployment (Compose files, images, env examples).
+* `docker/` – Containerized perfSONAR testpoint deployment (Compose files, images, env examples).
+  See: [docker/README.md](docker/README.md)
 * `native/` – VM/host installation scripts, psconfig builder, helpers.
-
+  See: [native/README.md](native/README.md)
+* `nmea-listener/` – NMEA 0183 navigation data listener for research vessels (GPS, heading, roll/pitch/heave).
+  See: [nmea-listener/README.md](nmea-listener/README.md)
 
 > Exact structure may vary slightly; refer to each sub-README for authoritative steps.
 
