@@ -1,0 +1,16 @@
+services:
+  nmea-listener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nmea-listener
+    # network_mode: host is required to receive UDP broadcast packets
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - .env
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
