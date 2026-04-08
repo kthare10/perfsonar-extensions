@@ -30,7 +30,7 @@ ALL_TEST_CATEGORIES = sorted(list(AVAILABLE_TESTS.keys()))
 CUSTOM_TEST_ARGS = {
     "latency": [],
     "rtt": [],
-    "throughput": ["-P", "4", "-t", "60"],
+    "throughput": ["-P", "4", "-t", "120"],
     "trace": [],
     "mtu": [],
     "clock": [],

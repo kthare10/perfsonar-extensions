@@ -7,8 +7,11 @@ parses GPS position, heading, and motion data, and POSTs batches
 to the pscheduler-result-archiver REST API.
 
 Supported sentences:
-  $INGGA     — GPS fix (lat, lon, altitude, satellites, HDOP, fix quality)
-  $INHDT     — True heading
+  $xxGGA     — GPS fix (lat, lon, altitude, satellites, HDOP, fix quality)
+               Talker IDs: GP, GN, IN, GL, GA, GB, GQ, etc.
+  $xxHDT     — True heading
+               Talker IDs: HE, IN, GP, GN, HC, etc.
+  $PASHR     — Hemisphere/Ashtech attitude & heading (heading, roll, pitch)
   $PSXN,20   — Kongsberg Seapath MRU quality/status
   $PSXN,23   — Roll, pitch, heading, heave
 """
@@ -91,9 +94,8 @@ def _safe_int(val: Any) -> Optional[int]:
 
 
 def parse_gga(sentence: str) -> Optional[Dict[str, Any]]:
-    """Parse $INGGA (GGA) sentence using pynmea2."""
+    """Parse GGA sentence using pynmea2 (any talker ID: GP, GN, IN, GL, etc.)."""
     try:
-        # pynmea2 expects the talker to be 2 chars; IN is valid
         msg = pynmea2.parse(sentence)
         if not isinstance(msg, pynmea2.GGA):
             return None
@@ -117,7 +119,7 @@ def parse_gga(sentence: str) -> Optional[Dict[str, Any]]:
 
 
 def parse_hdt(sentence: str) -> Optional[Dict[str, Any]]:
-    """Parse $INHDT (HDT) sentence using pynmea2."""
+    """Parse HDT sentence using pynmea2 (any talker ID: HE, IN, GP, GN, etc.)."""
     try:
         msg = pynmea2.parse(sentence)
         heading = _safe_float(msg.data[0]) if msg.data else None
@@ -132,6 +134,37 @@ def parse_hdt(sentence: str) -> Optional[Dict[str, Any]]:
         }
     except Exception as e:
         logger.debug("Failed to parse HDT: %s — %s", sentence.strip(), e)
+        return None
+
+
+def parse_pashr(sentence: str) -> Optional[Dict[str, Any]]:
+    """Parse $PASHR — Hemisphere/Ashtech attitude & heading.
+
+    Format: $PASHR,<time>,<heading>,T,<roll>,<pitch>,<heave>,
+            <roll_acc>,<pitch_acc>,<head_acc>,<aiding_status>,<IMU_status>*hh
+    """
+    try:
+        core = sentence.split("*")[0]
+        fields = core.split(",")
+        # fields[0]='$PASHR', fields[1]=time, fields[2]=heading, fields[3]='T',
+        # fields[4]=roll, fields[5]=pitch, fields[6]=heave, ...
+        if len(fields) < 7:
+            return None
+
+        nmea_time = fields[1] if len(fields) > 1 else ""
+        ts_str = _nmea_timestamp_to_iso(nmea_time)
+
+        return {
+            "ts": ts_str,
+            "vessel_id": VESSEL_ID,
+            "heading_true": _safe_float(fields[2]),
+            "roll_deg": _safe_float(fields[4]),
+            "pitch_deg": _safe_float(fields[5]),
+            "heave_m": _safe_float(fields[6]),
+            "aux": {"sentence_type": "PASHR", "raw": sentence.strip()},
+        }
+    except Exception as e:
+        logger.debug("Failed to parse PASHR: %s — %s", sentence.strip(), e)
         return None
 
 
@@ -194,16 +227,39 @@ def parse_psxn23(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _sentence_type(s: str) -> str:
+    """Extract the 3-letter sentence type from an NMEA sentence.
+
+    Standard NMEA: $XXYYY where XX=talker, YYY=sentence type → returns 'YYY'
+    Proprietary:   $Pxxx → returns the full tag up to comma/asterisk
+    """
+    if len(s) < 6 or s[0] != "$":
+        return ""
+    # Proprietary sentences start with $P
+    if s[1] == "P":
+        end = min(
+            s.index(",") if "," in s else len(s),
+            s.index("*") if "*" in s else len(s),
+        )
+        return s[1:end]  # e.g. "PASHR", "PSXN"
+    # Standard: talker is chars [1:3], sentence type is chars [3:6]
+    return s[3:6]
+
+
 def parse_sentence(sentence: str) -> Optional[Dict[str, Any]]:
     """Route an NMEA sentence to the appropriate parser."""
     s = sentence.strip()
     if not s:
         return None
 
-    if s.startswith("$INGGA") or s.startswith("$GPGGA"):
+    stype = _sentence_type(s)
+
+    if stype == "GGA":
         return parse_gga(s)
-    elif s.startswith("$INHDT") or s.startswith("$GPHDT"):
+    elif stype == "HDT":
         return parse_hdt(s)
+    elif stype == "PASHR":
+        return parse_pashr(s)
     elif s.startswith("$PSXN,20"):
         return parse_psxn20(s)
     elif s.startswith("$PSXN,23"):
@@ -305,10 +361,12 @@ def listen_udp(port: int, flusher: BatchFlusher) -> None:
         try:
             data, addr = sock.recvfrom(4096)
             text = data.decode("ascii", errors="replace")
+            logger.debug("Received %d bytes from %s", len(data), addr)
             # A single datagram may contain multiple NMEA sentences
             for line in text.splitlines():
                 point = parse_sentence(line)
                 if point:
+                    logger.debug("Parsed %s point from: %s", point.get("aux", {}).get("sentence_type", "?"), line.strip()[:80])
                     flusher.add(point)
         except Exception:
             logger.exception("Error receiving UDP datagram")

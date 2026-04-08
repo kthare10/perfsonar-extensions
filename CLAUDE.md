@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `psconfig/psconfig_builder.py` — Generates perfSONAR mesh config from `base_psconfig.json` template
   - `archive_offload.sh` — Exports results from OpenSearch/Elasticsearch via scroll API
 - **`nmea-listener/`** — UDP listener for NMEA 0183 broadcasts (port 13551)
-  - Parses `$INGGA` (GPS), `$INHDT` (heading), `$PSXN,20` (MRU status), `$PSXN,23` (roll/pitch/heave)
+  - Parses `$xxGGA` (GPS, any talker ID), `$xxHDT` (heading, any talker ID), `$PASHR` (attitude/heading), `$PSXN,20` (MRU status), `$PSXN,23` (roll/pitch/heave)
   - Batches and POSTs parsed data to the archiver REST API with bearer token auth
   - `nmea_sim.py` — Simulator for testing without real NMEA hardware
 
