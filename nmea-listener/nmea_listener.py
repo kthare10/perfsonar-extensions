@@ -14,6 +14,9 @@ Supported sentences:
   $PASHR     — Hemisphere/Ashtech attitude & heading (heading, roll, pitch)
   $PSXN,20   — Kongsberg Seapath MRU quality/status
   $PSXN,23   — Roll, pitch, heading, heave
+
+Archive URLs support per-destination flush intervals to conserve
+satellite bandwidth on remote links while keeping local archiving frequent.
 """
 
 import json
@@ -23,7 +26,7 @@ import socket
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pynmea2
 import requests
@@ -32,13 +35,59 @@ import urllib3
 # --------------- Configuration ---------------
 
 NMEA_UDP_PORT = int(os.getenv("NMEA_UDP_PORT", "13551"))
-ARCHIVE_URLS = [u.strip() for u in os.getenv("ARCHIVE_URLS", "https://localhost:8443/ps").split(",") if u.strip()]
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")
 VESSEL_ID = os.getenv("VESSEL_ID", "rv-thompson")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
-FLUSH_INTERVAL_S = float(os.getenv("FLUSH_INTERVAL_S", "5.0"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "65000"))
+FLUSH_INTERVAL_S = float(os.getenv("FLUSH_INTERVAL_S", "300.0"))
+REMOTE_FLUSH_INTERVAL_S = float(os.getenv("REMOTE_FLUSH_INTERVAL_S", "21600.0"))
 VERIFY_TLS = os.getenv("VERIFY_TLS", "false").lower() in ("true", "1", "yes")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# Archiver accepts max 1000 points per request; chunk large flushes
+_MAX_POINTS_PER_REQUEST = 1000
+
+# Parse ARCHIVE_URLS: comma-separated, each optionally suffixed with @<seconds>
+# Examples:
+#   "https://localhost:8443/ps"                           → uses FLUSH_INTERVAL_S
+#   "https://localhost:8443/ps,https://remote:8443/ps"    → both use defaults
+#   "https://localhost:8443/ps@300,https://remote:8443/ps@3600"  → 5min local, 1hr remote
+#
+# URLs containing "localhost" or "127.0.0.1" default to FLUSH_INTERVAL_S.
+# All other URLs default to REMOTE_FLUSH_INTERVAL_S.
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def _parse_archive_urls() -> List[Tuple[str, float]]:
+    """Parse ARCHIVE_URLS into (url, flush_interval_seconds) pairs."""
+    raw = os.getenv("ARCHIVE_URLS", "https://localhost:8443/ps")
+    result = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if "@" in entry:
+            # Split on last @ to allow URLs with @ in userinfo
+            idx = entry.rfind("@")
+            url, interval_str = entry[:idx], entry[idx + 1:]
+            try:
+                interval = float(interval_str)
+            except ValueError:
+                url = entry  # not a valid interval, treat whole thing as URL
+                interval = None
+        else:
+            url = entry
+            interval = None
+
+        if interval is None:
+            # Auto-detect local vs remote
+            is_local = any(h in url for h in _LOCAL_HOSTS)
+            interval = FLUSH_INTERVAL_S if is_local else REMOTE_FLUSH_INTERVAL_S
+
+        result.append((url, interval))
+    return result
+
+
+ARCHIVE_DESTINATIONS = _parse_archive_urls()
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -268,17 +317,36 @@ def parse_sentence(sentence: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-# --------------- Batch Flushing ---------------
+# --------------- Per-Destination Flushing ---------------
 
 
-class BatchFlusher:
-    """Thread-safe buffer that flushes to archiver endpoints."""
+def _merge_batch(points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge points with the same (ts, vessel_id) to avoid duplicate-key errors."""
+    merged: Dict[tuple, Dict[str, Any]] = {}
+    for pt in points:
+        key = (pt.get("ts"), pt.get("vessel_id"))
+        if key not in merged:
+            merged[key] = dict(pt)
+        else:
+            existing = merged[key]
+            for k, v in pt.items():
+                if k == "aux":
+                    old_aux = existing.get("aux") or {}
+                    new_aux = v or {}
+                    existing["aux"] = {**old_aux, **new_aux}
+                elif v is not None:
+                    existing[k] = v
+    return list(merged.values())
 
-    def __init__(self, archive_urls: List[str], auth_token: str):
+
+class DestinationFlusher:
+    """Manages an independent buffer and flush schedule for a single archive URL."""
+
+    def __init__(self, url: str, interval: float, auth_token: str):
+        self.url = url
+        self.interval = interval
         self._buffer: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
-        self._archive_urls = archive_urls
-        self._auth_token = auth_token
         self._session = requests.Session()
         self._session.headers.update({
             "Content-Type": "application/json",
@@ -289,57 +357,49 @@ class BatchFlusher:
             self._session.headers["Authorization"] = f"Bearer {auth_token}"
 
     def add(self, point: Dict[str, Any]) -> None:
+        flush_needed = False
         with self._lock:
             self._buffer.append(point)
-            if len(self._buffer) >= BATCH_SIZE:
-                self._flush_locked()
+            if BATCH_SIZE and len(self._buffer) >= BATCH_SIZE:
+                flush_needed = True
+        if flush_needed:
+            self.flush()
 
     def flush(self) -> None:
         with self._lock:
-            self._flush_locked()
+            if not self._buffer:
+                return
+            batch = _merge_batch(self._buffer[:])
+            self._buffer.clear()
 
-    @staticmethod
-    def _merge_batch(points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Merge points with the same (ts, vessel_id) to avoid duplicate-key errors."""
-        merged: Dict[tuple, Dict[str, Any]] = {}
-        for pt in points:
-            key = (pt.get("ts"), pt.get("vessel_id"))
-            if key not in merged:
-                merged[key] = dict(pt)
-            else:
-                existing = merged[key]
-                for k, v in pt.items():
-                    if k == "aux":
-                        old_aux = existing.get("aux") or {}
-                        new_aux = v or {}
-                        existing["aux"] = {**old_aux, **new_aux}
-                    elif v is not None:
-                        existing[k] = v
-        return list(merged.values())
+        # POST outside the lock so add() isn't blocked during HTTP calls.
+        # Chunk into ≤1000-point requests (archiver max per request).
+        for i in range(0, len(batch), _MAX_POINTS_PER_REQUEST):
+            chunk = batch[i:i + _MAX_POINTS_PER_REQUEST]
+            self._post_batch(chunk)
 
-    def _flush_locked(self) -> None:
-        if not self._buffer:
-            return
-
-        batch = self._merge_batch(self._buffer[:])
-        self._buffer.clear()
-
+    def _post_batch(self, batch: List[Dict[str, Any]]) -> None:
+        endpoint = f"{self.url.rstrip('/')}/measurements/nav"
         payload = json.dumps({"points": batch})
-        for url in self._archive_urls:
-            endpoint = f"{url.rstrip('/')}/measurements/nav"
-            try:
-                resp = self._session.post(
-                    endpoint,
-                    data=payload,
-                    timeout=10.0,
-                    verify=VERIFY_TLS,
+        try:
+            resp = self._session.post(
+                endpoint,
+                data=payload,
+                timeout=30.0,
+                verify=VERIFY_TLS,
+            )
+            if resp.status_code < 300:
+                logger.info(
+                    "Flushed %d points to %s (HTTP %d)",
+                    len(batch), endpoint, resp.status_code,
                 )
-                if resp.status_code < 300:
-                    logger.info("Flushed %d points to %s (HTTP %d)", len(batch), endpoint, resp.status_code)
-                else:
-                    logger.warning("POST %s returned HTTP %d: %s", endpoint, resp.status_code, resp.text[:200])
-            except Exception as e:
-                logger.error("Failed to POST to %s: %s", endpoint, e)
+            else:
+                logger.warning(
+                    "POST %s returned HTTP %d: %s",
+                    endpoint, resp.status_code, resp.text[:200],
+                )
+        except Exception as e:
+            logger.error("Failed to POST to %s: %s", endpoint, e)
 
     @property
     def buffer_size(self) -> int:
@@ -347,14 +407,40 @@ class BatchFlusher:
             return len(self._buffer)
 
 
-def flush_timer(flusher: BatchFlusher, interval: float) -> None:
-    """Daemon thread that flushes the buffer periodically."""
-    while True:
-        time.sleep(interval)
-        try:
-            flusher.flush()
-        except Exception:
-            logger.exception("Error in flush timer")
+class BatchFlusher:
+    """Dispatches parsed points to per-destination flushers with independent schedules."""
+
+    def __init__(self, destinations: List[Tuple[str, float]], auth_token: str):
+        self._flushers = [
+            DestinationFlusher(url, interval, auth_token)
+            for url, interval in destinations
+        ]
+
+    def add(self, point: Dict[str, Any]) -> None:
+        for f in self._flushers:
+            f.add(point)
+
+    def start_timers(self) -> None:
+        for f in self._flushers:
+            t = threading.Thread(
+                target=self._flush_loop,
+                args=(f,),
+                daemon=True,
+            )
+            t.start()
+
+    @staticmethod
+    def _flush_loop(flusher: DestinationFlusher) -> None:
+        while True:
+            time.sleep(flusher.interval)
+            try:
+                flusher.flush()
+            except Exception:
+                logger.exception("Error flushing to %s", flusher.url)
+
+    @property
+    def buffer_sizes(self) -> Dict[str, int]:
+        return {f.url: f.buffer_size for f in self._flushers}
 
 
 # --------------- UDP Listener ---------------
@@ -373,8 +459,9 @@ def listen_udp(port: int, flusher: BatchFlusher) -> None:
 
     logger.info("Listening for NMEA sentences on UDP port %d", port)
     logger.info("Vessel ID: %s", VESSEL_ID)
-    logger.info("Archive URLs: %s", ", ".join(ARCHIVE_URLS))
-    logger.info("Batch size: %d, Flush interval: %.1fs", BATCH_SIZE, FLUSH_INTERVAL_S)
+    for url, interval in ARCHIVE_DESTINATIONS:
+        logger.info("Archive: %s  (flush every %.0fs)", url, interval)
+    logger.info("Batch size limit: %d", BATCH_SIZE)
 
     while True:
         try:
@@ -397,17 +484,12 @@ def listen_udp(port: int, flusher: BatchFlusher) -> None:
 def main():
     if not AUTH_TOKEN:
         logger.warning("AUTH_TOKEN is not set — requests will be unauthenticated")
-    if not ARCHIVE_URLS:
+    if not ARCHIVE_DESTINATIONS:
         logger.error("ARCHIVE_URLS is not set — nowhere to send data")
         return
 
-    flusher = BatchFlusher(ARCHIVE_URLS, AUTH_TOKEN)
-
-    # Start periodic flush thread
-    timer = threading.Thread(
-        target=flush_timer, args=(flusher, FLUSH_INTERVAL_S), daemon=True
-    )
-    timer.start()
+    flusher = BatchFlusher(ARCHIVE_DESTINATIONS, AUTH_TOKEN)
+    flusher.start_timers()
 
     # Block on UDP listener
     listen_udp(NMEA_UDP_PORT, flusher)
