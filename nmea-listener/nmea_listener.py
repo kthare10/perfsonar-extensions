@@ -39,7 +39,7 @@ AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")
 VESSEL_ID = os.getenv("VESSEL_ID", "rv-thompson")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "65000"))
 FLUSH_INTERVAL_S = float(os.getenv("FLUSH_INTERVAL_S", "300.0"))
-REMOTE_FLUSH_INTERVAL_S = float(os.getenv("REMOTE_FLUSH_INTERVAL_S", "300.0"))
+REMOTE_FLUSH_INTERVAL_S = float(os.getenv("REMOTE_FLUSH_INTERVAL_S", "21600.0"))
 VERIFY_TLS = os.getenv("VERIFY_TLS", "false").lower() in ("true", "1", "yes")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
