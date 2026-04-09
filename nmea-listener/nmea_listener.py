@@ -37,11 +37,14 @@ import urllib3
 NMEA_UDP_PORT = int(os.getenv("NMEA_UDP_PORT", "13551"))
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")
 VESSEL_ID = os.getenv("VESSEL_ID", "rv-thompson")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "900"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "65000"))
 FLUSH_INTERVAL_S = float(os.getenv("FLUSH_INTERVAL_S", "300.0"))
 REMOTE_FLUSH_INTERVAL_S = float(os.getenv("REMOTE_FLUSH_INTERVAL_S", "300.0"))
 VERIFY_TLS = os.getenv("VERIFY_TLS", "false").lower() in ("true", "1", "yes")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# Archiver accepts max 1000 points per request; chunk large flushes
+_MAX_POINTS_PER_REQUEST = 1000
 
 # Parse ARCHIVE_URLS: comma-separated, each optionally suffixed with @<seconds>
 # Examples:
@@ -369,8 +372,11 @@ class DestinationFlusher:
             batch = _merge_batch(self._buffer[:])
             self._buffer.clear()
 
-        # POST outside the lock so add() isn't blocked during HTTP calls
-        self._post_batch(batch)
+        # POST outside the lock so add() isn't blocked during HTTP calls.
+        # Chunk into ≤1000-point requests (archiver max per request).
+        for i in range(0, len(batch), _MAX_POINTS_PER_REQUEST):
+            chunk = batch[i:i + _MAX_POINTS_PER_REQUEST]
+            self._post_batch(chunk)
 
     def _post_batch(self, batch: List[Dict[str, Any]]) -> None:
         endpoint = f"{self.url.rstrip('/')}/measurements/nav"
