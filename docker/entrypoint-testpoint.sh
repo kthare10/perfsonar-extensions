@@ -33,12 +33,14 @@ if [ -n "$AUTH_TOKEN" ]; then
   CRON_CMD="$CRON_CMD --auth-token $AUTH_TOKEN"
 fi
 
-echo "$CRON_EXPRESSION $CRON_CMD >> $LOG_FILE 2>&1" > "$CRON_FILE"
+# /etc/cron.d/ files require a username field (6th field before command)
+echo "$CRON_EXPRESSION root $CRON_CMD >> $LOG_FILE 2>&1" > "$CRON_FILE"
+echo "" >> "$CRON_FILE"  # trailing newline required by cron
 chmod 0644 "$CRON_FILE"
 
-# Clear existing crontab and register new one
+# Also install as user crontab (no username field in user crontabs)
 crontab -r 2>/dev/null || true
-crontab "$CRON_FILE"
+echo "$CRON_EXPRESSION $CRON_CMD >> $LOG_FILE 2>&1" | crontab -
 
 echo "Cron job registered: $(crontab -l)"
 
