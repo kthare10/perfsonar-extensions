@@ -17,12 +17,12 @@ echo "INTERVAL set to: $INTERVAL"
 mkdir -p /etc/cron.d /data
 
 CRON_FILE=/etc/cron.d/daily-tests
-# /etc/cron.d/ files require a username field (6th field before command)
-echo "${INTERVAL} root /usr/bin/python3 /usr/src/app/periodic.py --hosts ${HOSTS} --output-dir /data >> /data/cron.log 2>&1" > "$CRON_FILE"
+# Cron treats '%' as newline — escape them
+HOSTS_ESCAPED="${HOSTS//%/\\%}"
+# /etc/cron.d/ files require a username field (no user crontab to avoid double execution)
+echo "${INTERVAL} root /usr/bin/python3 /usr/src/app/periodic.py --hosts ${HOSTS_ESCAPED} --output-dir /data >> /data/cron.log 2>&1" > "$CRON_FILE"
 echo "" >> "$CRON_FILE"  # trailing newline required by cron
 chmod 0644 "$CRON_FILE"
-# Also install as user crontab (no username field in user crontabs)
-echo "${INTERVAL} /usr/bin/python3 /usr/src/app/periodic.py --hosts ${HOSTS} --output-dir /data >> /data/cron.log 2>&1" | crontab -
 
 echo "Cron job added for hosts: ${HOSTS} at interval: ${INTERVAL}"
 

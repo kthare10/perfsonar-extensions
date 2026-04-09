@@ -33,16 +33,17 @@ if [ -n "$AUTH_TOKEN" ]; then
   CRON_CMD="$CRON_CMD --auth-token $AUTH_TOKEN"
 fi
 
-# /etc/cron.d/ files require a username field (6th field before command)
-echo "$CRON_EXPRESSION root $CRON_CMD >> $LOG_FILE 2>&1" > "$CRON_FILE"
+# Cron treats '%' as newline — escape them in the command string
+CRON_CMD_ESCAPED="${CRON_CMD//%/\\%}"
+
+# Use /etc/cron.d/ (requires username field; no user crontab to avoid double execution)
+crontab -r 2>/dev/null || true
+echo "$CRON_EXPRESSION root $CRON_CMD_ESCAPED >> $LOG_FILE 2>&1" > "$CRON_FILE"
 echo "" >> "$CRON_FILE"  # trailing newline required by cron
 chmod 0644 "$CRON_FILE"
 
-# Also install as user crontab (no username field in user crontabs)
-crontab -r 2>/dev/null || true
-echo "$CRON_EXPRESSION $CRON_CMD >> $LOG_FILE 2>&1" | crontab -
-
-echo "Cron job registered: $(crontab -l)"
+echo "Cron job registered:"
+cat "$CRON_FILE"
 
 # --- Patch pscheduler limits (throughput duration 60 -> 300) ---
 LIMITS_FILE="/etc/pscheduler/limits.conf"
