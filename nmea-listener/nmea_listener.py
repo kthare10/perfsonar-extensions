@@ -298,11 +298,30 @@ class BatchFlusher:
         with self._lock:
             self._flush_locked()
 
+    @staticmethod
+    def _merge_batch(points: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Merge points with the same (ts, vessel_id) to avoid duplicate-key errors."""
+        merged: Dict[tuple, Dict[str, Any]] = {}
+        for pt in points:
+            key = (pt.get("ts"), pt.get("vessel_id"))
+            if key not in merged:
+                merged[key] = dict(pt)
+            else:
+                existing = merged[key]
+                for k, v in pt.items():
+                    if k == "aux":
+                        old_aux = existing.get("aux") or {}
+                        new_aux = v or {}
+                        existing["aux"] = {**old_aux, **new_aux}
+                    elif v is not None:
+                        existing[k] = v
+        return list(merged.values())
+
     def _flush_locked(self) -> None:
         if not self._buffer:
             return
 
-        batch = self._buffer[:]
+        batch = self._merge_batch(self._buffer[:])
         self._buffer.clear()
 
         payload = json.dumps({"points": batch})
