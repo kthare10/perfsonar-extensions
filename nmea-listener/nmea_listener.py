@@ -354,8 +354,13 @@ class DestinationFlusher:
             self._session.headers["Authorization"] = f"Bearer {auth_token}"
 
     def add(self, point: Dict[str, Any]) -> None:
+        flush_needed = False
         with self._lock:
             self._buffer.append(point)
+            if BATCH_SIZE and len(self._buffer) >= BATCH_SIZE:
+                flush_needed = True
+        if flush_needed:
+            self.flush()
 
     def flush(self) -> None:
         with self._lock:
@@ -364,7 +369,10 @@ class DestinationFlusher:
             batch = _merge_batch(self._buffer[:])
             self._buffer.clear()
 
-        # POST outside the lock
+        # POST outside the lock so add() isn't blocked during HTTP calls
+        self._post_batch(batch)
+
+    def _post_batch(self, batch: List[Dict[str, Any]]) -> None:
         endpoint = f"{self.url.rstrip('/')}/measurements/nav"
         payload = json.dumps({"points": batch})
         try:
