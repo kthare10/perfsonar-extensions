@@ -2,6 +2,7 @@
 import argparse
 import json
 import subprocess
+import time
 import os
 from datetime import datetime, timezone
 import sys
@@ -320,6 +321,32 @@ def run_pscheduler_test(
             except Exception as e:
                 logger.error(f"Could not read output JSON ({output_file}): {e}")
                 return
+
+            # Check if pScheduler reported a test failure (e.g. iperf3 KeyError)
+            if isinstance(raw, dict) and raw.get("succeeded") is False:
+                err_msg = raw.get("error", "unknown error")
+                logger.warning(
+                    f"Test {test} ({tool_tag}) to {dest} ({dst.name}) "
+                    f"failed: {err_msg} — retrying once after 30s"
+                )
+                time.sleep(30)
+                status, exception = run_checked(cmd, logger=logger)
+                if not status:
+                    logger.error(f"Retry also failed (exit {status}): {exception}")
+                    return
+                try:
+                    with open(output_file, "r") as f:
+                        raw = json.load(f)
+                except Exception as e:
+                    logger.error(f"Could not read retry output JSON ({output_file}): {e}")
+                    return
+                if isinstance(raw, dict) and raw.get("succeeded") is False:
+                    logger.error(
+                        f"Retry of {test} ({tool_tag}) to {dest} ({dst.name}) "
+                        f"also failed: {raw.get('error', 'unknown')} — skipping archival"
+                    )
+                    return
+                logger.info(f"Retry succeeded for {test} ({tool_tag}) to {dest} ({dst.name})")
 
             if source:
                 # Use explicit source IP for the src NodeRef (multi-network path)
