@@ -2,8 +2,10 @@
 """
 Simulate NMEA 0183 UDP broadcasts for testing the nmea-listener pipeline.
 
-Sends realistic GGA, HDT, PSXN,20, and PSXN,23 sentences at ~1 Hz for
-a configurable duration, simulating a vessel underway with gentle rolling.
+Sends realistic GGA, HDT, PSXN,20, PSXN,23, RELWS, RELWD, pressure, and humidity
+data at ~1 Hz for a configurable duration, simulating a vessel underway with gentle
+rolling.  All sentences are packed into a single UDP datagram per tick, matching
+the real SCS broadcast format.
 
 Usage:
     python3 nmea_sim.py [UDP_PORT] [DURATION_S]
@@ -72,6 +74,18 @@ def make_psxn23(roll, pitch, heading, heave):
     return f"${body}*{nmea_checksum(body)}"
 
 
+def make_relws(rel_speed, rel_dir):
+    """Build $RELWS sentence (relative wind)."""
+    body = f"RELWS,{rel_speed:.2f},{rel_dir:.1f},921.8,60,"
+    return f"${body}"
+
+
+def make_relwd(true_speed, true_dir, rel_speed, rel_dir):
+    """Build $RELWD sentence (true wind)."""
+    body = f"RELWD,{true_speed:.2f},{true_dir:.1f},{rel_speed:.2f},{rel_dir:.1f},59,"
+    return f"${body}"
+
+
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -93,30 +107,44 @@ def main():
         pitch = 1.5 * math.sin(t / 10.0) + 0.8 * math.cos(t / 4.5)
         heave = 0.4 * math.sin(t / 6.0) + 0.15 * math.sin(t / 2.5)
 
-        sentences = [
+        # Simulate wind: relative wind ~12-18 kts, true wind ~8-25 kts
+        rel_wind_speed = 15.0 + 3.0 * math.sin(t / 20.0)
+        rel_wind_dir = 45.0 + 15.0 * math.sin(t / 25.0)
+        true_wind_speed = 18.0 + 7.0 * math.sin(t / 40.0)
+        true_wind_dir = 210.0 + 20.0 * math.sin(t / 35.0)
+
+        # Simulate pressure ~1013-1020 hPa, humidity ~75-85%
+        pressure = 1016.5 + 2.0 * math.sin(t / 120.0)
+        humidity = 80.0 + 5.0 * math.sin(t / 90.0)
+
+        # Build lines matching real SCS datagram format (all in one UDP packet)
+        lines = [
             make_gga(lat, lon, ALTITUDE_M, now),
             make_hdt(heading),
             make_psxn20(0, 0, 0, 0),
             make_psxn23(roll, pitch, heading, heave),
+            make_relws(rel_wind_speed, rel_wind_dir),
+            make_relwd(true_wind_speed, true_wind_dir, rel_wind_speed, rel_wind_dir),
+            f"{pressure:.1f}",
+            f"{humidity:05.1f}",
         ]
 
-        # Send each sentence as a separate UDP datagram (like real NMEA systems)
-        for s in sentences:
-            payload = (s + "\r\n").encode("ascii")
-            try:
-                sock.sendto(payload, (BROADCAST_ADDR, UDP_PORT))
-            except OSError:
-                # Fallback to localhost if broadcast fails
-                sock.sendto(payload, ("127.0.0.1", UDP_PORT))
+        # Send as a single datagram (matching real SCS broadcast format)
+        payload = "\r\n".join(lines).encode("ascii") + b"\r\n"
+        try:
+            sock.sendto(payload, (BROADCAST_ADDR, UDP_PORT))
+        except OSError:
+            # Fallback to localhost if broadcast fails
+            sock.sendto(payload, ("127.0.0.1", UDP_PORT))
 
         tick += 1
         if tick % 10 == 0:
-            print(f"  [{tick}s] lat={lat:.4f} lon={lon:.4f} hdg={heading:.1f} roll={roll:.1f} pitch={pitch:.1f} heave={heave:.2f}")
+            print(f"  [{tick}s] lat={lat:.4f} lon={lon:.4f} hdg={heading:.1f} roll={roll:.1f} pitch={pitch:.1f} heave={heave:.2f} rws={rel_wind_speed:.1f}kts tws={true_wind_speed:.1f}kts prs={pressure:.1f}hPa hum={humidity:.1f}%")
 
         time.sleep(1.0)
 
     sock.close()
-    print(f"Done. Sent {tick} sets of NMEA sentences ({tick * 4} total datagrams).")
+    print(f"Done. Sent {tick} datagrams (each containing 8 lines: 6 sentences + 2 bare values).")
 
 
 if __name__ == "__main__":

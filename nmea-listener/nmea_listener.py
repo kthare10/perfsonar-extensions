@@ -14,6 +14,10 @@ Supported sentences:
   $PASHR     — Hemisphere/Ashtech attitude & heading (heading, roll, pitch)
   $PSXN,20   — Kongsberg Seapath MRU quality/status
   $PSXN,23   — Roll, pitch, heading, heave
+  $RELWS     — Relative wind speed and direction
+  $RELWD     — True wind speed and direction
+  (bare)     — Barometric pressure (hPa) and relative humidity (%),
+               detected as trailing bare numbers after $RELWD
 
 Archive URLs support per-destination flush intervals to conserve
 satellite bandwidth on remote links while keeping local archiving frequent.
@@ -276,6 +280,64 @@ def parse_psxn23(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def parse_relws(sentence: str) -> Optional[Dict[str, Any]]:
+    """Parse $RELWS — Relative wind speed and direction.
+
+    Format: $RELWS,<rel_wind_speed_kts>,<rel_wind_dir_deg>,<field3>,<field4>,
+    """
+    try:
+        core = sentence.split("*")[0]
+        fields = core.split(",")
+        # fields[0]='$RELWS', fields[1]=speed, fields[2]=direction
+        if len(fields) < 3:
+            return None
+
+        speed = _safe_float(fields[1])
+        direction = _safe_float(fields[2])
+        if speed is None and direction is None:
+            return None
+
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "vessel_id": VESSEL_ID,
+            "rel_wind_speed_kts": speed,
+            "rel_wind_dir_deg": direction,
+            "aux": {"sentence_type": "RELWS", "raw": sentence.strip()},
+        }
+    except Exception as e:
+        logger.debug("Failed to parse RELWS: %s — %s", sentence.strip(), e)
+        return None
+
+
+def parse_relwd(sentence: str) -> Optional[Dict[str, Any]]:
+    """Parse $RELWD — True wind speed and direction.
+
+    Format: $RELWD,<true_wind_speed_kts>,<true_wind_dir_deg>,<calc1>,<calc2>,<field5>,
+    """
+    try:
+        core = sentence.split("*")[0]
+        fields = core.split(",")
+        # fields[0]='$RELWD', fields[1]=speed, fields[2]=direction
+        if len(fields) < 3:
+            return None
+
+        speed = _safe_float(fields[1])
+        direction = _safe_float(fields[2])
+        if speed is None and direction is None:
+            return None
+
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "vessel_id": VESSEL_ID,
+            "true_wind_speed_kts": speed,
+            "true_wind_dir_deg": direction,
+            "aux": {"sentence_type": "RELWD", "raw": sentence.strip()},
+        }
+    except Exception as e:
+        logger.debug("Failed to parse RELWD: %s — %s", sentence.strip(), e)
+        return None
+
+
 def _sentence_type(s: str) -> str:
     """Extract the 3-letter sentence type from an NMEA sentence.
 
@@ -309,12 +371,63 @@ def parse_sentence(sentence: str) -> Optional[Dict[str, Any]]:
         return parse_hdt(s)
     elif stype == "PASHR":
         return parse_pashr(s)
+    elif stype == "LWS":
+        return parse_relws(s)
+    elif stype == "LWD":
+        return parse_relwd(s)
     elif s.startswith("$PSXN,20"):
         return parse_psxn20(s)
     elif s.startswith("$PSXN,23"):
         return parse_psxn23(s)
 
     return None
+
+
+def parse_datagram(text: str) -> List[Dict[str, Any]]:
+    """Parse all NMEA sentences and bare environmental values from a UDP datagram.
+
+    Bare numeric lines after $RELWD are interpreted as barometric pressure (hPa)
+    and relative humidity (%), based on the observed SCS broadcast format:
+        $RELWD,...
+        1016.9        ← pressure_hpa
+        081.5         ← humidity_pct
+    """
+    lines = text.splitlines()
+    points: List[Dict[str, Any]] = []
+    relwd_seen = False
+    bare_after_relwd: List[float] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if stripped.startswith("$"):
+            point = parse_sentence(stripped)
+            if point:
+                points.append(point)
+            if stripped.startswith("$RELWD"):
+                relwd_seen = True
+                bare_after_relwd = []
+        elif relwd_seen:
+            val = _safe_float(stripped)
+            if val is not None:
+                bare_after_relwd.append(val)
+
+    # Trailing bare numbers after $RELWD: pressure (hPa), then humidity (%)
+    if len(bare_after_relwd) >= 2:
+        points.append({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "vessel_id": VESSEL_ID,
+            "pressure_hpa": bare_after_relwd[0],
+            "humidity_pct": bare_after_relwd[1],
+            "aux": {
+                "sentence_type": "ENV_BARE",
+                "raw": f"pressure={bare_after_relwd[0]}, humidity={bare_after_relwd[1]}",
+            },
+        })
+
+    return points
 
 
 # --------------- Per-Destination Flushing ---------------
@@ -468,12 +581,10 @@ def listen_udp(port: int, flusher: BatchFlusher) -> None:
             data, addr = sock.recvfrom(4096)
             text = data.decode("ascii", errors="replace")
             logger.debug("Received %d bytes from %s", len(data), addr)
-            # A single datagram may contain multiple NMEA sentences
-            for line in text.splitlines():
-                point = parse_sentence(line)
-                if point:
-                    logger.debug("Parsed %s point from: %s", point.get("aux", {}).get("sentence_type", "?"), line.strip()[:80])
-                    flusher.add(point)
+            # Parse entire datagram (handles both $-prefixed sentences and bare values)
+            for point in parse_datagram(text):
+                logger.debug("Parsed %s point", point.get("aux", {}).get("sentence_type", "?"))
+                flusher.add(point)
         except Exception:
             logger.exception("Error receiving UDP datagram")
 
