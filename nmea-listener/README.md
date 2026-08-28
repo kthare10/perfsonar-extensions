@@ -7,12 +7,23 @@ Captures NMEA 0183 navigation data broadcast via UDP from research vessel instru
 | Sentence | Talker IDs | Source | Data |
 |----------|-----------|--------|------|
 | `$xxGGA` | GP, GN, IN, GL, GA, etc. | GPS/GNSS receiver | Latitude, longitude, altitude, fix quality, satellites, HDOP |
-| `$xxHDT` | HE, IN, GP, GN, HC, etc. | Gyrocompass / heading sensor | True heading |
+| `$xxHDT` | HE, IN, GP, GN, HC, MG, etc. | Gyrocompass / heading sensor | True heading |
 | `$PASHR` | — (proprietary) | Hemisphere/Ashtech IMU | Heading, roll, pitch, heave |
 | `$PSXN,20` | — (proprietary) | Kongsberg Seapath MRU | Quality/status indicators |
 | `$PSXN,23` | — (proprietary) | Kongsberg Seapath MRU | Roll, pitch, heading, heave |
+| `$RELWS` / `$RELWD` | — (SCS derived) | Anemometer (Thompson) | Relative / true wind speed & direction |
+| `$xxXDR` | WI, etc. | Met sensor (e.g. Vaisala met4a) | Pressure (bar → hPa), humidity (%); air temp → `aux` |
+| `<STX>…<ETX>` Gill polar | — (not NMEA) | Gill anemometer (Sikuliaq) | Relative wind direction & speed (m/s → knots) |
 
-Any standard NMEA talker ID is accepted for GGA and HDT sentences (e.g., `$GNGGA`, `$GPGGA`, `$HEHDT`).
+Any standard NMEA talker ID is accepted for GGA, HDT, and XDR sentences (e.g., `$GNGGA`, `$GPGGA`, `$HEHDT`, `$MGHDT`, `$WIXDR`).
+
+**SCS-wrapped lines** (R/V Sikuliaq) are unwrapped automatically. Each line may carry a feed label and receipt timestamp, tab-separated:
+
+```
+gyro_mgc_1<TAB>2026-08-28T18:15:00.7679Z<TAB>$MGHDT,337.32,T*1E
+```
+
+The wrapper timestamp is used as the point's `ts` for sentences that carry no time of their own (HDT, PSXN, XDR, wind), and the feed label is stored in `aux.feed`.
 
 Data from all sentence types received at the same second are merged into a single `nav_data` row via the archiver's COALESCE-based upsert.
 

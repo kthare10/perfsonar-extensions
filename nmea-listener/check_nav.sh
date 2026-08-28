@@ -5,6 +5,7 @@
 #   ./check_nav.sh                          # latest 10 points
 #   ./check_nav.sh -n 50                    # latest 50 points
 #   ./check_nav.sh -v rv-thompson           # filter by vessel
+#   ./check_nav.sh rv-thompson              # same (bare arg = vessel)
 #   ./check_nav.sh -s 2026-04-09T00:00:00Z # points after start time
 #   ./check_nav.sh -e 2026-04-09T12:00:00Z # points before end time
 #   ./check_nav.sh -u https://23.134.232.51:8443/ps  # custom archiver URL
@@ -25,7 +26,7 @@ RAW=false
 VERIFY=""
 
 usage() {
-    sed -n '2,11p' "$0" | sed 's/^# \?//'
+    sed -n '2,12p' "$0" | sed 's/^# \?//'
     exit 0
 }
 
@@ -43,6 +44,10 @@ while getopts "u:t:n:v:s:e:rkh" opt; do
         *) usage ;;
     esac
 done
+shift $((OPTIND - 1))
+
+# A bare positional argument is treated as the vessel id (same as -v)
+[ $# -gt 0 ] && [ -z "$VESSEL" ] && VESSEL="$1"
 
 # Build query string
 QS="limit=${LIMIT}"

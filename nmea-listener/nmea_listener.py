@@ -15,14 +15,22 @@ Supported sentences:
   $xxGGA     — GPS fix (lat, lon, altitude, satellites, HDOP, fix quality)
                Talker IDs: GP, GN, IN, GL, GA, GB, GQ, etc.
   $xxHDT     — True heading
-               Talker IDs: HE, IN, GP, GN, HC, etc.
+               Talker IDs: HE, IN, GP, GN, HC, MG, etc.
   $PASHR     — Hemisphere/Ashtech attitude & heading (heading, roll, pitch)
   $PSXN,20   — Kongsberg Seapath MRU quality/status
   $PSXN,23   — Roll, pitch, heading, heave
   $RELWS     — Relative wind speed and direction
   $RELWD     — True wind speed and direction
+  $xxXDR     — Transducer measurements: PRESS (bar → hPa), RH (%), TEMP (→ aux)
   (bare)     — Barometric pressure (hPa) and relative humidity (%),
                detected as trailing bare numbers after $RELWD
+  <STX>...   — Gill anemometer polar format: \x02<node>,<dir>,<speed>,<units>,
+               <status>,\x03<checksum> (relative wind)
+
+Lines may be wrapped in an SCS-style prefix (R/V Sikuliaq):
+    <feed_label> <TAB> <ISO-8601 timestamp> <TAB> <sentence>
+The wrapper timestamp is used for sentences that carry no time of their own,
+and the feed label is recorded in aux.
 
 Archive URLs support per-destination flush intervals to conserve
 satellite bandwidth on remote links while keeping local archiving frequent.
@@ -166,6 +174,53 @@ def _nmea_timestamp_to_iso(nmea_time: str, nmea_date: Optional[str] = None) -> s
         return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_iso_ts(text: str) -> Optional[str]:
+    """Validate/normalize an ISO 8601 timestamp string (e.g. from an SCS wrapper).
+
+    Returns a normalized ISO string, or None if the text isn't a timestamp.
+    Handles a trailing 'Z' and fractional seconds of any width.
+    """
+    t = text.strip()
+    if len(t) < 19 or t[4] != "-" or t[10] not in ("T", " "):
+        return None
+    if t.endswith("Z"):
+        t = t[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(t).isoformat()
+    except ValueError:
+        pass
+    # Older Pythons only accept 3 or 6 fractional digits — pad/truncate and retry
+    try:
+        if "." in t:
+            base, frac = t.split(".", 1)
+            tz = ""
+            for sep in ("+", "-"):
+                if sep in frac:
+                    frac, tz = frac.split(sep, 1)
+                    tz = sep + tz
+                    break
+            t = f"{base}.{frac[:6].ljust(6, '0')}{tz}"
+        return datetime.fromisoformat(t).isoformat()
+    except ValueError:
+        return None
+
+
+def _split_scs_wrapper(line: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """Split an SCS-style wrapped line into (payload, ts_iso, feed_label).
+
+    SCS broadcasts (e.g. R/V Sikuliaq) prefix each sentence with a feed label
+    and receipt timestamp, tab-separated:
+        gyro_mgc_1<TAB>2026-08-28T18:15:00.7679Z<TAB>$MGHDT,337.32,T*1E
+    Unwrapped lines are returned as-is with (line, None, None).
+    """
+    parts = line.split("\t")
+    if len(parts) >= 3:
+        ts = _parse_iso_ts(parts[1])
+        if ts:
+            return "\t".join(parts[2:]), ts, parts[0].strip()
+    return line, None, None
+
+
 def _safe_float(val: Any) -> Optional[float]:
     if val is None or val == "":
         return None
@@ -209,8 +264,8 @@ def parse_gga(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def parse_hdt(sentence: str) -> Optional[Dict[str, Any]]:
-    """Parse HDT sentence using pynmea2 (any talker ID: HE, IN, GP, GN, etc.)."""
+def parse_hdt(sentence: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Parse HDT sentence using pynmea2 (any talker ID: HE, IN, GP, GN, MG, etc.)."""
     try:
         msg = pynmea2.parse(sentence)
         heading = _safe_float(msg.data[0]) if msg.data else None
@@ -218,7 +273,7 @@ def parse_hdt(sentence: str) -> Optional[Dict[str, Any]]:
             return None
 
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
             "vessel_id": VESSEL_ID,
             "heading_true": heading,
             "aux": {"sentence_type": "HDT", "raw": sentence.strip()},
@@ -259,7 +314,7 @@ def parse_pashr(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def parse_psxn20(sentence: str) -> Optional[Dict[str, Any]]:
+def parse_psxn20(sentence: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Parse $PSXN,20 — Kongsberg Seapath MRU quality/status.
 
     Format: $PSXN,20,<horiz_qual>,<hgt_qual>,<head_qual>,<rp_qual>*hh
@@ -275,7 +330,7 @@ def parse_psxn20(sentence: str) -> Optional[Dict[str, Any]]:
         motion_status = _safe_int(fields[5])  # roll/pitch quality (0=normal)
 
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
             "vessel_id": VESSEL_ID,
             "motion_status": motion_status,
             "aux": {
@@ -292,7 +347,7 @@ def parse_psxn20(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def parse_psxn23(sentence: str) -> Optional[Dict[str, Any]]:
+def parse_psxn23(sentence: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Parse $PSXN,23 — Roll, pitch, heading, heave.
 
     Format: $PSXN,23,<roll>,<pitch>,<heading>,<heave>*hh
@@ -305,7 +360,7 @@ def parse_psxn23(sentence: str) -> Optional[Dict[str, Any]]:
             return None
 
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
             "vessel_id": VESSEL_ID,
             "roll_deg": _safe_float(fields[2]),
             "pitch_deg": _safe_float(fields[3]),
@@ -318,7 +373,7 @@ def parse_psxn23(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def parse_relws(sentence: str) -> Optional[Dict[str, Any]]:
+def parse_relws(sentence: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Parse $RELWS — Relative wind speed and direction.
 
     Format: $RELWS,<rel_wind_speed_kts>,<rel_wind_dir_deg>,<field3>,<field4>,
@@ -336,7 +391,7 @@ def parse_relws(sentence: str) -> Optional[Dict[str, Any]]:
             return None
 
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
             "vessel_id": VESSEL_ID,
             "rel_wind_speed_kts": speed,
             "rel_wind_dir_deg": direction,
@@ -347,7 +402,7 @@ def parse_relws(sentence: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def parse_relwd(sentence: str) -> Optional[Dict[str, Any]]:
+def parse_relwd(sentence: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Parse $RELWD — True wind speed and direction.
 
     Format: $RELWD,<true_wind_speed_kts>,<true_wind_dir_deg>,<calc1>,<calc2>,<field5>,
@@ -365,7 +420,7 @@ def parse_relwd(sentence: str) -> Optional[Dict[str, Any]]:
             return None
 
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
             "vessel_id": VESSEL_ID,
             "true_wind_speed_kts": speed,
             "true_wind_dir_deg": direction,
@@ -373,6 +428,111 @@ def parse_relwd(sentence: str) -> Optional[Dict[str, Any]]:
         }
     except Exception as e:
         logger.debug("Failed to parse RELWD: %s — %s", sentence.strip(), e)
+        return None
+
+
+# Pressure unit → hPa conversion factors ($xxXDR PRESS group)
+_PRESSURE_TO_HPA = {
+    "bar": 1000.0, "b": 1000.0,       # bar (Vaisala met4a reports 'bar')
+    "hpa": 1.0, "mbar": 1.0,
+    "pa": 0.01, "p": 0.01,            # pascal
+}
+
+
+def parse_xdr(sentence: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Parse $xxXDR — transducer measurements (met sensor).
+
+    Observed R/V Sikuliaq (Vaisala met4a) format, with irregular grouping:
+        $WIXDR,PRESS,1.004098,bar,s/n146582,TEMP,9.80,C,RH,99.98,%RH,s/n20268816,FAN,1
+
+    Rather than assuming standard 4-field (type,value,unit,id) groups, scan for
+    known measurement tags and read the value/unit that follow each.
+    PRESS → pressure_hpa, RH → humidity_pct; TEMP has no nav_data column, so it
+    goes into aux only.
+    """
+    try:
+        core = sentence.split("*")[0]
+        fields = core.split(",")
+
+        point: Dict[str, Any] = {}
+        aux: Dict[str, Any] = {"sentence_type": "XDR", "raw": sentence.strip()}
+        for i, field in enumerate(fields[1:-1], start=1):
+            tag = field.strip().upper()
+            value = _safe_float(fields[i + 1])
+            unit = fields[i + 2].strip().lower() if i + 2 < len(fields) else ""
+            if value is None:
+                continue
+            if tag == "PRESS":
+                factor = _PRESSURE_TO_HPA.get(unit)
+                if factor is not None:
+                    point["pressure_hpa"] = round(value * factor, 4)
+            elif tag == "RH":
+                point["humidity_pct"] = value
+            elif tag == "TEMP":
+                aux["air_temp_c"] = value
+
+        if not point and "air_temp_c" not in aux:
+            return None
+
+        point.update({
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
+            "vessel_id": VESSEL_ID,
+            "aux": aux,
+        })
+        return point
+    except Exception as e:
+        logger.debug("Failed to parse XDR: %s — %s", sentence.strip(), e)
+        return None
+
+
+# Gill anemometer speed unit → knots conversion factors
+_GILL_UNITS_TO_KTS = {
+    "M": 1.943844,   # m/s
+    "N": 1.0,        # knots
+    "K": 0.539957,   # km/h
+    "P": 0.868976,   # mph
+}
+
+
+def parse_gill_wind(payload: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Parse Gill anemometer polar format (not NMEA).
+
+    Observed R/V Sikuliaq format:
+        \\x02A,284,012.44,M,60,\\x0305
+    i.e. <STX><node>,<direction_deg>,<speed>,<units>,<status>,<ETX><checksum>
+    Units: M=m/s, N=knots, P=mph, K=km/h. Anemometer wind is relative to the ship.
+    """
+    try:
+        data = payload.lstrip("\x02").split("\x03")[0]
+        fields = data.split(",")
+        # fields[0]=node, fields[1]=direction, fields[2]=speed, fields[3]=units, fields[4]=status
+        if len(fields) < 5:
+            return None
+
+        direction = _safe_float(fields[1])
+        speed = _safe_float(fields[2])
+        units = fields[3].strip().upper()
+        if speed is not None:
+            factor = _GILL_UNITS_TO_KTS.get(units)
+            speed = round(speed * factor, 3) if factor is not None else None
+        if speed is None and direction is None:
+            return None
+
+        return {
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
+            "vessel_id": VESSEL_ID,
+            "rel_wind_speed_kts": speed,
+            "rel_wind_dir_deg": direction,
+            "aux": {
+                "sentence_type": "GILL_WIND",
+                "node": fields[0],
+                "units": units,
+                "status": fields[4],
+                "raw": data,
+            },
+        }
+    except Exception as e:
+        logger.debug("Failed to parse Gill wind: %r — %s", payload.strip(), e)
         return None
 
 
@@ -395,8 +555,12 @@ def _sentence_type(s: str) -> str:
     return s[3:6]
 
 
-def parse_sentence(sentence: str) -> Optional[Dict[str, Any]]:
-    """Route an NMEA sentence to the appropriate parser."""
+def parse_sentence(sentence: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Route an NMEA sentence to the appropriate parser.
+
+    default_ts (e.g. from an SCS wrapper) is used by parsers whose sentences
+    carry no time of their own; GGA and PASHR keep their embedded NMEA time.
+    """
     s = sentence.strip()
     if not s:
         return None
@@ -406,23 +570,29 @@ def parse_sentence(sentence: str) -> Optional[Dict[str, Any]]:
     if stype == "GGA":
         return parse_gga(s)
     elif stype == "HDT":
-        return parse_hdt(s)
+        return parse_hdt(s, default_ts)
+    elif stype == "XDR":
+        return parse_xdr(s, default_ts)
     elif stype == "PASHR":
         return parse_pashr(s)
     elif stype == "LWS":
-        return parse_relws(s)
+        return parse_relws(s, default_ts)
     elif stype == "LWD":
-        return parse_relwd(s)
+        return parse_relwd(s, default_ts)
     elif s.startswith("$PSXN,20"):
-        return parse_psxn20(s)
+        return parse_psxn20(s, default_ts)
     elif s.startswith("$PSXN,23"):
-        return parse_psxn23(s)
+        return parse_psxn23(s, default_ts)
 
     return None
 
 
 def parse_datagram(text: str) -> List[Dict[str, Any]]:
     """Parse all NMEA sentences and bare environmental values from a UDP datagram.
+
+    Each line may be plain NMEA (R/V Thompson) or SCS-wrapped
+    `<label>\\t<ISO ts>\\t<sentence>` (R/V Sikuliaq) — see _split_scs_wrapper.
+    Gill anemometer polar lines (STX-prefixed, not NMEA) are also handled.
 
     Bare numeric lines after $RELWD are interpreted as barometric pressure (hPa)
     and relative humidity (%), based on the observed SCS broadcast format:
@@ -436,19 +606,30 @@ def parse_datagram(text: str) -> List[Dict[str, Any]]:
     bare_after_relwd: List[float] = []
 
     for line in lines:
-        stripped = line.strip()
+        payload, wrapper_ts, feed_label = _split_scs_wrapper(line)
+        stripped = payload.strip()
         if not stripped:
             continue
 
         if stripped.startswith("$"):
-            point = parse_sentence(stripped)
+            point = parse_sentence(stripped, wrapper_ts)
             if point:
+                if feed_label:
+                    point.setdefault("aux", {})["feed"] = feed_label
                 points.append(point)
             else:
                 _log_unknown_sentence(stripped)
             if stripped.startswith("$RELWD"):
                 relwd_seen = True
                 bare_after_relwd = []
+        elif stripped.startswith("\x02"):
+            point = parse_gill_wind(stripped, wrapper_ts)
+            if point:
+                if feed_label:
+                    point["aux"]["feed"] = feed_label
+                points.append(point)
+            else:
+                _log_unknown_sentence(stripped)
         elif relwd_seen:
             val = _safe_float(stripped)
             if val is not None:
