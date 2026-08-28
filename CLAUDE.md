@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `perfsonar_setup.sh` — Main orchestrator: updates /etc/hosts, installs packages, generates psconfig
   - `psconfig/psconfig_builder.py` — Generates perfSONAR mesh config from `base_psconfig.json` template
   - `archive_offload.sh` — Exports results from OpenSearch/Elasticsearch via scroll API
-- **`nmea-listener/`** — UDP listener for NMEA 0183 broadcasts (port 13551)
+- **`nmea-listener/`** — UDP listener for NMEA 0183 broadcasts on one or more ports (`NMEA_UDP_PORTS`; Thompson uses single port 13551, Sikuliaq uses per-feed ports)
   - Parses `$xxGGA` (GPS, any talker ID), `$xxHDT` (heading, any talker ID), `$PASHR` (attitude/heading), `$PSXN,20` (MRU status), `$PSXN,23` (roll/pitch/heave)
   - Batches and POSTs parsed data to the archiver REST API with bearer token auth
   - `nmea_sim.py` — Simulator for testing without real NMEA hardware
@@ -43,7 +43,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Hosts can be specified as: `ip@name`, `name@ip`, `ip,name`, `ip|name`, or plain `host`. The runner auto-detects which part is the IP vs. friendly name.
 
 ### NMEA Listener
-Receives NMEA 0183 UDP broadcasts on a configurable port (default 13551), parses GPS position, heading, MRU status, and roll/pitch/heave sentences, then batches and POSTs them to the archiver REST API. Deployed via Docker with host networking to receive UDP broadcasts. Configured via env vars: `NMEA_UDP_PORT`, `ARCHIVE_URLS`, `AUTH_TOKEN`, `VESSEL_ID`, `BATCH_SIZE`, `FLUSH_INTERVAL_S`.
+Receives NMEA 0183 UDP broadcasts on one or more configurable ports (default 13551; comma-separated for vessels that broadcast each feed on its own port, e.g. Sikuliaq), parses GPS position, heading, MRU status, and roll/pitch/heave sentences, then batches and POSTs them to the archiver REST API. Deployed via Docker with host networking to receive UDP broadcasts. Configured via env vars: `NMEA_UDP_PORTS` (legacy `NMEA_UDP_PORT` honored), `ARCHIVE_URLS`, `AUTH_TOKEN`, `VESSEL_ID`, `BATCH_SIZE`, `FLUSH_INTERVAL_S`.
 
 ### Archiving Flow
 Test results are saved as local JSON files and POSTed to REST archiver endpoints (bearer token auth, upsert mode). Multiple `ARCHIVE_URLS` are supported, separated by commas.

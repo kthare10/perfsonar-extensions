@@ -6,6 +6,11 @@ Captures UDP-broadcast NMEA sentences from R/V navigation systems,
 parses GPS position, heading, and motion data, and POSTs batches
 to the pscheduler-result-archiver REST API.
 
+Listens on one or more UDP ports (NMEA_UDP_PORTS, comma-separated) —
+some vessels broadcast every sentence on a single port, others use a
+separate port per feed. All ports feed one shared batch pipeline;
+sentences are routed by type, not by port.
+
 Supported sentences:
   $xxGGA     — GPS fix (lat, lon, altitude, satellites, HDOP, fix quality)
                Talker IDs: GP, GN, IN, GL, GA, GB, GQ, etc.
@@ -38,7 +43,11 @@ import urllib3
 
 # --------------- Configuration ---------------
 
-NMEA_UDP_PORT = int(os.getenv("NMEA_UDP_PORT", "13551"))
+# Comma-separated list of UDP ports to listen on. Some vessels broadcast all
+# sentences on one port (R/V Thompson: 13551); others use one port per feed
+# (R/V Sikuliaq: GGA on 52119, HDT/PSXN on 53122, wind on 53124,
+# pressure/humidity on 53118). Falls back to legacy NMEA_UDP_PORT.
+NMEA_UDP_PORTS = os.getenv("NMEA_UDP_PORTS", os.getenv("NMEA_UDP_PORT", "13551"))
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")
 VESSEL_ID = os.getenv("VESSEL_ID", "rv-thompson")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "65000"))
@@ -91,7 +100,21 @@ def _parse_archive_urls() -> List[Tuple[str, float]]:
     return result
 
 
+def _parse_ports() -> List[int]:
+    """Parse NMEA_UDP_PORTS into a deduplicated list of ports (order preserved)."""
+    ports: List[int] = []
+    for entry in NMEA_UDP_PORTS.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        port = int(entry)  # fail fast on a bad config
+        if port not in ports:
+            ports.append(port)
+    return ports
+
+
 ARCHIVE_DESTINATIONS = _parse_archive_urls()
+LISTEN_PORTS = _parse_ports()
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -103,6 +126,21 @@ if not VERIFY_TLS:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --------------- NMEA Parsing ---------------
+
+# Sentence types seen but not parsed — logged once per type so an operator
+# can spot unsupported feeds (e.g. a vessel using $WIMWV instead of $RELWS)
+# without drowning the log.
+_unseen_lock = threading.Lock()
+_unknown_types_seen: set = set()
+
+
+def _log_unknown_sentence(sentence: str) -> None:
+    stype = _sentence_type(sentence) or sentence[:10]
+    with _unseen_lock:
+        if stype in _unknown_types_seen:
+            return
+        _unknown_types_seen.add(stype)
+    logger.info("Unrecognized sentence type %r (sample: %s)", stype, sentence[:120])
 
 
 def _nmea_timestamp_to_iso(nmea_time: str, nmea_date: Optional[str] = None) -> str:
@@ -406,6 +444,8 @@ def parse_datagram(text: str) -> List[Dict[str, Any]]:
             point = parse_sentence(stripped)
             if point:
                 points.append(point)
+            else:
+                _log_unknown_sentence(stripped)
             if stripped.startswith("$RELWD"):
                 relwd_seen = True
                 bare_after_relwd = []
@@ -560,7 +600,7 @@ class BatchFlusher:
 
 
 def listen_udp(port: int, flusher: BatchFlusher) -> None:
-    """Main loop: receive UDP datagrams and parse NMEA sentences."""
+    """Per-port loop: receive UDP datagrams and parse NMEA sentences."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -571,22 +611,22 @@ def listen_udp(port: int, flusher: BatchFlusher) -> None:
     sock.bind(("", port))
 
     logger.info("Listening for NMEA sentences on UDP port %d", port)
-    logger.info("Vessel ID: %s", VESSEL_ID)
-    for url, interval in ARCHIVE_DESTINATIONS:
-        logger.info("Archive: %s  (flush every %.0fs)", url, interval)
-    logger.info("Batch size limit: %d", BATCH_SIZE)
 
+    first_datagram = True
     while True:
         try:
             data, addr = sock.recvfrom(4096)
             text = data.decode("ascii", errors="replace")
-            logger.debug("Received %d bytes from %s", len(data), addr)
+            if first_datagram:
+                logger.info("First datagram on port %d from %s: %r", port, addr, text[:200])
+                first_datagram = False
+            logger.debug("Received %d bytes on port %d from %s", len(data), port, addr)
             # Parse entire datagram (handles both $-prefixed sentences and bare values)
             for point in parse_datagram(text):
                 logger.debug("Parsed %s point", point.get("aux", {}).get("sentence_type", "?"))
                 flusher.add(point)
         except Exception:
-            logger.exception("Error receiving UDP datagram")
+            logger.exception("Error receiving UDP datagram on port %d", port)
 
 
 # --------------- Main ---------------
@@ -598,12 +638,32 @@ def main():
     if not ARCHIVE_DESTINATIONS:
         logger.error("ARCHIVE_URLS is not set — nowhere to send data")
         return
+    if not LISTEN_PORTS:
+        logger.error("NMEA_UDP_PORTS is empty — nothing to listen on")
+        return
+
+    logger.info("Vessel ID: %s", VESSEL_ID)
+    for url, interval in ARCHIVE_DESTINATIONS:
+        logger.info("Archive: %s  (flush every %.0fs)", url, interval)
+    logger.info("Batch size limit: %d", BATCH_SIZE)
 
     flusher = BatchFlusher(ARCHIVE_DESTINATIONS, AUTH_TOKEN)
     flusher.start_timers()
 
-    # Block on UDP listener
-    listen_udp(NMEA_UDP_PORT, flusher)
+    # One listener thread per port, all feeding the same flusher
+    threads = []
+    for port in LISTEN_PORTS:
+        t = threading.Thread(
+            target=listen_udp,
+            args=(port, flusher),
+            daemon=True,
+            name=f"udp-{port}",
+        )
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
 
 
 if __name__ == "__main__":

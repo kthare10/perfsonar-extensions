@@ -71,7 +71,7 @@ All settings via environment variables in `.env`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NMEA_UDP_PORT` | `13551` | UDP port to listen on (R/V Thompson uses 13551) |
+| `NMEA_UDP_PORTS` | `13551` | Comma-separated UDP port(s) to listen on. Single port when all sentences share one broadcast (R/V Thompson: `13551`); multiple when each feed has its own port (R/V Sikuliaq: `52119,53122,53124,53118`). Legacy `NMEA_UDP_PORT` still honored. |
 | `ARCHIVE_URLS` | `https://localhost:8443/ps` | Comma-separated archiver URLs (see [Per-URL intervals](#per-url-flush-intervals)) |
 | `AUTH_TOKEN` | *(required)* | Bearer token for archiver authentication |
 | `VESSEL_ID` | `rv-thompson` | Vessel identifier (partition key in `nav_data` table) |
@@ -122,7 +122,7 @@ The archiver API accepts max 1000 points per request. Large flushes are automati
 
 ## How It Works
 
-1. **UDP reception** — Main thread binds to `NMEA_UDP_PORT` with `SO_BROADCAST` and receives datagrams. Requires Docker `network_mode: host`.
+1. **UDP reception** — One listener thread per port in `NMEA_UDP_PORTS` binds with `SO_BROADCAST` and receives datagrams; all ports feed the same parsing/batch pipeline (sentences are routed by type, not by port). Requires Docker `network_mode: host`.
 2. **Parsing** — Standard sentences (`$xxGGA`, `$xxHDT`) are parsed with `pynmea2` (any talker ID). Proprietary sentences (`$PASHR`, `$PSXN`) are parsed manually.
 3. **Buffering** — Each archive destination has an independent buffer. Parsed points are appended to all destination buffers.
 4. **Deduplication** — Before flushing, points with the same `(ts, vessel_id)` are merged (non-null values win, `aux` JSONB objects combined).
