@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `psconfig/psconfig_builder.py` — Generates perfSONAR mesh config from `base_psconfig.json` template
   - `archive_offload.sh` — Exports results from OpenSearch/Elasticsearch via scroll API
 - **`nmea-listener/`** — UDP listener for NMEA 0183 broadcasts on one or more ports (`NMEA_UDP_PORTS`; Thompson uses single port 13551, Sikuliaq uses per-feed ports)
-  - Parses `$xxGGA` (GPS, any talker ID), `$xxHDT` (heading, any talker ID), `$PASHR` (attitude/heading), `$PSXN,20` (MRU status), `$PSXN,23` (roll/pitch/heave), `$xxXDR` (met: pressure bar→hPa, humidity; air temp → aux), `$RELWS`/`$RELWD` (wind), and Gill anemometer polar format (`\x02A,dir,speed,M,status,\x03cs`, m/s→knots)
+  - Parses `$xxGGA` (GPS, any talker ID), `$xxHDT` (heading, any talker ID), `$PASHR` (attitude/heading), `$PSXN,20` (MRU status), `$PSXN,23` (roll/pitch/heave), `$xxXDR` (met: pressure bar→hPa, humidity; air temp → aux), `$RELWS`/`$RELWD` (wind), Gill anemometer polar format (`\x02A,dir,speed,M,status,\x03cs`, m/s→knots), and optical rain gauge lines (`R- <rate_mm_hr> <accum_mm> ...`, accumulation resets 0000 UTC)
   - Sikuliaq lines arrive SCS-wrapped (`<feed_label>\t<ISO ts>\t<sentence>`); the wrapper is stripped, its timestamp used as `ts` for time-less sentences, and the label stored in `aux.feed`. pynmea2 rejects sentences with invalid checksums.
   - Batches and POSTs parsed data to the archiver REST API with bearer token auth
   - `nmea_sim.py` — Simulator for testing without real NMEA hardware

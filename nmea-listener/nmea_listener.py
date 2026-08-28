@@ -26,6 +26,10 @@ Supported sentences:
                detected as trailing bare numbers after $RELWD
   <STX>...   — Gill anemometer polar format: \x02<node>,<dir>,<speed>,<units>,
                <status>,\x03<checksum> (relative wind)
+  R- ...     — Optical rain gauge (ORG) space-separated line:
+               <condition> <rate_mm_hr> <accum_mm_utc_day> <extras...>
+               e.g. "R- .205 000.005 01*0 4999 0081 0040 +12"
+               Accumulation resets at 0000 UTC each day.
 
 Lines may be wrapped in an SCS-style prefix (R/V Sikuliaq):
     <feed_label> <TAB> <ISO-8601 timestamp> <TAB> <sentence>
@@ -54,7 +58,7 @@ import urllib3
 # Comma-separated list of UDP ports to listen on. Some vessels broadcast all
 # sentences on one port (R/V Thompson: 13551); others use one port per feed
 # (R/V Sikuliaq: GGA on 52119, HDT/PSXN on 53122, wind on 53124,
-# pressure/humidity on 53118). Falls back to legacy NMEA_UDP_PORT.
+# pressure/humidity on 53118, rain on 53102). Falls back to legacy NMEA_UDP_PORT.
 NMEA_UDP_PORTS = os.getenv("NMEA_UDP_PORTS", os.getenv("NMEA_UDP_PORT", "13551"))
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")
 VESSEL_ID = os.getenv("VESSEL_ID", "rv-thompson")
@@ -536,6 +540,49 @@ def parse_gill_wind(payload: str, default_ts: Optional[str] = None) -> Optional[
         return None
 
 
+def parse_org_rain(payload: str, default_ts: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Parse an optical rain gauge (ORG) line (not NMEA).
+
+    Observed R/V Sikuliaq format (one line per minute, top of the minute):
+        R- .205 000.005 01*0 4999 0081 0040 +12
+    i.e. <condition> <rate_mm_hr> <accum_mm> <extras...>, space-separated.
+    <condition> is a short letter code (e.g. R- = light rain); <accum_mm> is
+    the accumulation since 0000 UTC (resets daily). Trailing fields are
+    instrument diagnostics and are ignored.
+    """
+    try:
+        fields = payload.split()
+        if len(fields) < 3:
+            return None
+        condition = fields[0]
+        # Condition code: 1-2 chars, a letter optionally followed by +/-.
+        # This also rejects Thompson's bare numeric lines (pressure/humidity).
+        if not condition[0].isalpha() or len(condition) > 2:
+            return None
+        if len(condition) == 2 and condition[1] not in ("+", "-"):
+            return None
+
+        rate = _safe_float(fields[1])
+        accum = _safe_float(fields[2])
+        if rate is None or accum is None:
+            return None
+
+        return {
+            "ts": default_ts or datetime.now(timezone.utc).isoformat(),
+            "vessel_id": VESSEL_ID,
+            "rain_rate_mmhr": rate,
+            "rain_accum_mm": accum,
+            "aux": {
+                "sentence_type": "ORG_RAIN",
+                "condition": condition,
+                "raw": payload.strip(),
+            },
+        }
+    except Exception as e:
+        logger.debug("Failed to parse ORG rain: %r — %s", payload.strip(), e)
+        return None
+
+
 def _sentence_type(s: str) -> str:
     """Extract the 3-letter sentence type from an NMEA sentence.
 
@@ -592,7 +639,8 @@ def parse_datagram(text: str) -> List[Dict[str, Any]]:
 
     Each line may be plain NMEA (R/V Thompson) or SCS-wrapped
     `<label>\\t<ISO ts>\\t<sentence>` (R/V Sikuliaq) — see _split_scs_wrapper.
-    Gill anemometer polar lines (STX-prefixed, not NMEA) are also handled.
+    Gill anemometer polar lines (STX-prefixed) and optical rain gauge lines
+    ("R- <rate> <accum> ...") — neither of which is NMEA — are also handled.
 
     Bare numeric lines after $RELWD are interpreted as barometric pressure (hPa)
     and relative humidity (%), based on the observed SCS broadcast format:
@@ -630,10 +678,16 @@ def parse_datagram(text: str) -> List[Dict[str, Any]]:
                 points.append(point)
             else:
                 _log_unknown_sentence(stripped)
-        elif relwd_seen:
-            val = _safe_float(stripped)
-            if val is not None:
-                bare_after_relwd.append(val)
+        else:
+            point = parse_org_rain(stripped, wrapper_ts)
+            if point:
+                if feed_label:
+                    point["aux"]["feed"] = feed_label
+                points.append(point)
+            elif relwd_seen:
+                val = _safe_float(stripped)
+                if val is not None:
+                    bare_after_relwd.append(val)
 
     # Trailing bare numbers after $RELWD: pressure (hPa), then humidity (%)
     if len(bare_after_relwd) >= 2:
