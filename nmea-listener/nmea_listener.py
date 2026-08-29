@@ -851,7 +851,9 @@ def listen_udp(port: int, flusher: BatchFlusher) -> None:
     while True:
         try:
             data, addr = sock.recvfrom(4096)
-            text = data.decode("ascii", errors="replace")
+            # Some instruments NUL-terminate/pad datagrams (e.g. the ORG rain
+            # gauge); PostgreSQL jsonb cannot store \u0000, so drop NULs here.
+            text = data.decode("ascii", errors="replace").replace("\x00", "")
             if first_datagram:
                 logger.info("First datagram on port %d from %s: %r", port, addr, text[:200])
                 first_datagram = False
